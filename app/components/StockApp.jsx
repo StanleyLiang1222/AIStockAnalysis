@@ -1,16 +1,13 @@
-const { useState, useEffect, useMemo, useRef, useCallback } = React;
+'use client';
+
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { signOut } from 'next-auth/react';
 
 /**
- * 預設自選股數據
- * @type {Array<Object>}
+ * 預設自選股（新使用者第一次登入時，會拿這份清單種入資料庫）
+ * @type {Array<string>}
  */
-const DEFAULT_STOCKS = [
-  { id: '2330.TW', name: '台積電', price: 920.0, change: 15.0, changePercent: 1.66, volume: '32,150', category: '半導體', eps: 32.4, yoy: 18.5, roe: 24.2, chips: { foreign: 1540, trust: 320, dealer: -120 } },
-  { id: '2317.TW', name: '鴻海', price: 210.0, change: -4.5, changePercent: -2.10, volume: '58,400', category: '電子代工', eps: 10.25, yoy: 8.2, roe: 11.5, chips: { foreign: -2100, trust: 850, dealer: 450 } },
-  { id: '2454.TW', name: '聯發科', price: 1385.0, change: 45.0, changePercent: 3.36, volume: '4,120', category: 'IC設計', eps: 48.5, yoy: 22.1, roe: 28.1, chips: { foreign: 420, trust: 110, dealer: 85 } },
-  { id: '2603.TW', name: '長榮', price: 194.5, change: -1.5, changePercent: -0.77, volume: '21,300', category: '航運', eps: 16.7, yoy: -4.3, roe: 18.2, chips: { foreign: -850, trust: -420, dealer: 120 } },
-  { id: '2881.TW', name: '富邦金', price: 82.3, change: 0.8, changePercent: 0.98, volume: '18,900', category: '金融保險', eps: 6.8, yoy: 12.4, roe: 10.1, chips: { foreign: 1250, trust: 40, dealer: -300 } },
-];
+const DEFAULT_WATCHLIST_IDS = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2881.TW'];
 
 /**
  * 將個股 ID (e.g. 2330.TW 或 2330) 轉換為 FinMind 格式 (e.g. 2330)
@@ -54,18 +51,16 @@ const getRecentDaysAgoDate = (days = 30) => {
 };
 
 /**
- * 封裝 Fetch，自動利用 AllOrigins CORS Proxy 以確保在 file:/// (null origin) 協議下也能正常跨域取得資料
+ * 封裝 Fetch，自動利用 AllOrigins CORS Proxy 以確保跨域取得資料
  */
 const safeFetchJson = async (url) => {
   try {
-    // 1. 優先直接 Fetch (適合支援 CORS 且直接訪問成功的環境)
     const res = await fetch(url);
     const json = await res.json();
     return json;
   } catch (err) {
     console.warn("直接 Fetch 發生 CORS 或連線錯誤，嘗試使用 AllOrigins Proxy...", err);
     try {
-      // 2. 備份方案 A: AllOrigins Proxy
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
       const res = await fetch(proxyUrl);
       const proxyJson = await res.json();
@@ -75,7 +70,6 @@ const safeFetchJson = async (url) => {
     } catch (err2) {
       console.warn("AllOrigins Proxy 載入失敗，嘗試使用 CorsProxy.io...", err2);
       try {
-        // 3. 備份方案 B: CorsProxy.io
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
         const res = await fetch(proxyUrl);
         const json = await res.json();
@@ -131,11 +125,7 @@ const fetchFinMindFinancialStatements = async (stockId) => {
 };
 
 /**
- * 生成 OHLCV K 線蠟燭棒數據
- * @param {number} basePrice - 起始參考價
- * @param {number} count - 蠟燭棒數量
- * @param {Array<string>} labels - 時間標籤陣列
- * @returns {Array<Object>} OHLCV 資料陣列
+ * 生成 OHLCV K 線蠟燭棒數據（載入真實資料前的骨架佔位圖）
  */
 function generateCandleData(basePrice, count, labels) {
   let price = basePrice;
@@ -160,11 +150,9 @@ function generateFittedIntradayPoints(candle) {
   const count = 26;
   const points = [];
 
-  // 生成隨機擾動走勢
   let currentPrice = open;
   const volPerPoint = Math.floor(volume / count);
 
-  // 生成時間標籤 9:00 到 13:10 (26 筆)
   const labels = Array.from({ length: count }, (_, i) => {
     const totalMinutes = 9 * 60 + i * 10;
     const h = Math.floor(totalMinutes / 60);
@@ -178,18 +166,11 @@ function generateFittedIntradayPoints(candle) {
     } else if (i === count - 1) {
       currentPrice = close;
     } else {
-      // 計算剩餘步伐
       const remainingSteps = count - 1 - i;
-      // 算出往收盤價拉攏的目標偏向
       const targetDiff = close - currentPrice;
       const targetStep = targetDiff / (remainingSteps + 1);
-
-      // 隨機抖動
       const randomNoise = (Math.random() - 0.5) * (high - low) * 0.15;
-
       currentPrice = currentPrice + targetStep + randomNoise;
-
-      // 限制在 high 和 low 之間
       currentPrice = Math.min(high, Math.max(low, currentPrice));
     }
 
@@ -207,7 +188,7 @@ function generateFittedIntradayPoints(candle) {
 }
 
 /**
- * 模擬歷史 K 線數據（OHLCV 格式）
+ * 骨架佔位 K 線數據（真實資料尚未載入完成前顯示）
  * @type {Object}
  */
 const HISTORICAL_SAMPLES = {
@@ -241,6 +222,7 @@ const Icon = ({ name, className = "w-5 h-5", strokeWidth = 2.5 }) => {
     refreshCw: <><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M16 3h5v5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 21H3v-5" /></>,
     info: <><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
     bookOpen: <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>,
+    logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></>,
   };
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -430,10 +412,9 @@ const KLINE_TEMPLATES = [
 /**
  * 精美標記影線/實體的 SVG K 線圖示元件
  */
-function KlineDetailIcon({ type, high, open, close, low, themeMode }) {
-  const isTaiwan = themeMode === 'taiwan';
-  const upColor = isTaiwan ? '#ff453a' : '#30d158';
-  const downColor = isTaiwan ? '#30d158' : '#ff453a';
+function KlineDetailIcon({ type, high, open, close, low }) {
+  const upColor = '#ff453a';
+  const downColor = '#30d158';
   const crossColor = '#a0a5ad';
 
   const cx = 100;
@@ -443,7 +424,6 @@ function KlineDetailIcon({ type, high, open, close, low, themeMode }) {
   if (type === 'up') color = upColor;
   if (type === 'down') color = downColor;
 
-  // 決定左側與右側標籤文字與對應的 Y 軸高度
   let leftTopText = '';
   let leftTopY = 0;
   let leftBottomText = '';
@@ -503,10 +483,8 @@ function KlineDetailIcon({ type, high, open, close, low, themeMode }) {
 
   return (
     <svg width="200" height="150" viewBox="0 0 200 150" className="mx-auto overflow-visible select-none">
-      {/* 影線 (最高到最低) */}
       <line x1={cx} y1={high} x2={cx} y2={low} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
 
-      {/* 實體 */}
       {type === 'up' && (
         <rect x={cx - entityW / 2} y={close} width={entityW} height={Math.max(2, open - close)} fill={color} stroke={color} strokeWidth="1" rx="1.5" />
       )}
@@ -517,7 +495,6 @@ function KlineDetailIcon({ type, high, open, close, low, themeMode }) {
         <line x1={cx - 18} y1={open} x2={cx + 18} y2={open} stroke={color} strokeWidth="4" strokeLinecap="round" />
       )}
 
-      {/* 左側標籤導引點線 */}
       {leftTopText && (
         <g className="transition-all duration-300">
           <line x1={cx - 14} y1={leftTopY} x2={64} y2={leftTopY} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
@@ -531,7 +508,6 @@ function KlineDetailIcon({ type, high, open, close, low, themeMode }) {
         </g>
       )}
 
-      {/* 右側標籤導引點線 */}
       {rightTopText && (
         <g className="transition-all duration-300">
           <line x1={cx} y1={rightTopY} x2={136} y2={rightTopY} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
@@ -551,7 +527,7 @@ function KlineDetailIcon({ type, high, open, close, low, themeMode }) {
 /**
  * K 線型態圖典主面板元件
  */
-function KlineGuide({ themeMode }) {
+function KlineGuide() {
   const [filter, setFilter] = useState('all'); // 'all' | 'up' | 'down' | 'cross'
 
   const filteredTemplates = useMemo(() => {
@@ -561,7 +537,6 @@ function KlineGuide({ themeMode }) {
 
   return (
     <div className="w-full space-y-5 fade-in-up">
-      {/* 導言說明區 */}
       <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-base font-black text-white flex items-center gap-2">
@@ -569,7 +544,7 @@ function KlineGuide({ themeMode }) {
             K 線經典型態圖典
           </h2>
           <p className="text-xs text-[#9ba1a6] font-bold mt-1">
-            收錄 13 種技術分析必學 K 線型態。圖示中的導引點線即時呈現「開、高、低、收」的對應邏輯，顏色會自動與您的「台股/國際」配色主題同步。
+            收錄 13 種技術分析必學 K 線型態。圖示中的導引點線即時呈現「開、高、低、收」的對應邏輯。
           </p>
         </div>
         <div className="flex bg-[#0d0f12] p-1 rounded-lg border-2 border-[#22252a] text-xs font-black self-stretch md:self-auto justify-between md:justify-start gap-1">
@@ -580,12 +555,10 @@ function KlineGuide({ themeMode }) {
         </div>
       </div>
 
-      {/* 13 種型態卡片網格 (自適應 RWD) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredTemplates.map(template => (
           <div key={template.id} className="glass-k-card rounded-xl p-5 flex flex-col justify-between">
             <div>
-              {/* 卡片頂部 */}
               <div className="flex justify-between items-start gap-2 mb-3">
                 <div>
                   <span className="text-[10px] font-mono text-[#6e8eff] font-black uppercase">型態 #{template.id}</span>
@@ -599,7 +572,6 @@ function KlineGuide({ themeMode }) {
                 </span>
               </div>
 
-              {/* K 線圖示區 */}
               <div className="bg-[#090a0c] border-2 border-[#1f2227] rounded-xl py-4 flex items-center justify-center relative overflow-hidden">
                 <div className="absolute top-1 right-2 text-[9px] text-[#3e4550] font-mono select-none">SVG Vector Map</div>
                 <KlineDetailIcon
@@ -608,12 +580,10 @@ function KlineGuide({ themeMode }) {
                   open={template.open}
                   close={template.close}
                   low={template.low}
-                  themeMode={themeMode}
                 />
               </div>
             </div>
 
-            {/* 卡片說明 */}
             <p className="text-xs text-slate-300 font-bold leading-relaxed pt-3.5 border-t border-[#1f2125]/80 mt-4">
               {template.desc}
             </p>
@@ -627,104 +597,172 @@ function KlineGuide({ themeMode }) {
 /* =====================================================
    主應用程式
    ===================================================== */
-function App() {
+export default function StockApp({ user }) {
   const [deviceMode, setDeviceMode] = useState('phone');
-  const [themeMode, setThemeMode] = useState('taiwan');
   const [activeTab, setActiveTab] = useState('watchlist');
-  const [stocks, setStocks] = useState(DEFAULT_STOCKS);
-  const [selectedStock, setSelectedStock] = useState(DEFAULT_STOCKS[0]);
-  const [watchlist, setWatchlist] = useState(['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2881.TW']);
+  const [stocks, setStocks] = useState([]);
+  const [selectedStock, setSelectedStock] = useState(null);
+  const [watchlist, setWatchlist] = useState([]);
+  const [watchlistLoading, setWatchlistLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [timeRange, setTimeRange] = useState('1D');
   const [chartType, setChartType] = useState('line'); // 'line' | 'candle'
-  const [simulating, setSimulating] = useState(false); // 真實模式下預設不開啟模擬，但可在 mock 模式開啟
-  const [tickEffect, setTickEffect] = useState({});
   const [aiAnalysis, setAiAnalysis] = useState({});
   const [aiLoading, setAiLoading] = useState(false);
   const [widescreenTab, setWidescreenTab] = useState('dashboard'); // 'dashboard' | 'guide'
 
-  // 真實台股數據相關狀態
-  const [dataSource, setDataSource] = useState('real'); // 'real' | 'mock'
   const [realDataLoading, setRealDataLoading] = useState(false);
   const [realHistoricalCandles, setRealHistoricalCandles] = useState({}); // { [stockId]: [candles] }
 
-  // 載入自選清單內所有個股的今日最新真實行情
-  const loadRealStockPrices = useCallback(async (targetStocks = stocks) => {
+  /**
+   * 依代碼向 FinMind 抓取完整個股資料（報價、籌碼、財報、名稱）與歷史 K 線
+   */
+  const fetchFullStockData = useCallback(async (rawId) => {
+    const cleanId = rawId.includes('.TW') ? rawId : rawId + '.TW';
+    const pureId = formatFinMindId(cleanId);
+
+    const data = await fetchFinMindDailyPrice(pureId);
+    if (!data || data.length === 0) {
+      throw new Error('查無此台股代碼');
+    }
+
+    const latest = data[data.length - 1];
+    const prev = data.length > 1 ? data[data.length - 2] : latest;
+    const closePrice = latest.close;
+    const changeAmount = parseFloat((closePrice - prev.close).toFixed(1));
+    const changePercent = prev.close > 0 ? parseFloat(((changeAmount / prev.close) * 100).toFixed(2)) : 0;
+    const volumeK = Math.round(latest.Trading_Volume / 1000).toLocaleString();
+
+    let chips = { foreign: 0, trust: 0, dealer: 0 };
+    try {
+      const chipsData = await fetchFinMindInstitutionalInvestors(pureId);
+      if (chipsData && chipsData.length > 0) {
+        const latestDate = chipsData[chipsData.length - 1].date;
+        const latestChips = chipsData.filter(c => c.date === latestDate);
+        let foreign = 0; let trust = 0; let dealer = 0;
+        latestChips.forEach(item => {
+          const diffZhang = Math.round((item.buy - item.sell) / 1000);
+          if (item.name === 'Foreign_Investor') foreign = diffZhang;
+          if (item.name === 'Investment_Trust') trust = diffZhang;
+          if (item.name === 'Dealer_self' || item.name === 'Dealer_Hedging') dealer += diffZhang;
+        });
+        chips = { foreign, trust, dealer };
+      }
+    } catch (err) { console.warn("無法取得籌碼數據", err); }
+
+    let eps = 0;
+    try {
+      const finData = await fetchFinMindFinancialStatements(pureId);
+      if (finData && finData.length > 0) {
+        const epsItems = finData.filter(f => f.type === 'EPS');
+        if (epsItems.length > 0) eps = epsItems[epsItems.length - 1].value;
+      }
+    } catch (err) { console.warn("無法取得財報數據", err); }
+
+    let name = '台股 ' + pureId;
+    let category = '自選股';
+    try {
+      const info = await fetchFinMindStockInfo(pureId);
+      name = info.name;
+      category = info.category;
+    } catch (err) {
+      console.warn("無法取得基本資訊", err);
+    }
+
+    const stock = {
+      id: cleanId,
+      name,
+      price: closePrice,
+      change: changeAmount,
+      changePercent,
+      volume: volumeK,
+      category,
+      eps,
+      yoy: 15.0,
+      roe: 12.0,
+      chips
+    };
+
+    const candles = data.map(item => ({
+      time: item.date,
+      open: item.open,
+      high: item.max,
+      low: item.min,
+      close: item.close,
+      volume: Math.round(item.Trading_Volume / 1000)
+    }));
+
+    return { stock, candles };
+  }, []);
+
+  // 首次載入：從資料庫讀取使用者的自選股清單，若為新使用者則種入預設清單
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setWatchlistLoading(true);
+      try {
+        const res = await fetch('/api/watchlist');
+        const { watchlist: savedIds } = await res.json();
+        let ids = savedIds && savedIds.length > 0 ? savedIds : DEFAULT_WATCHLIST_IDS;
+
+        if (!savedIds || savedIds.length === 0) {
+          await Promise.all(ids.map((id) =>
+            fetch('/api/watchlist', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ stockId: id }),
+            })
+          ));
+        }
+
+        const results = await Promise.all(ids.map(async (id) => {
+          try {
+            return await fetchFullStockData(id);
+          } catch (err) {
+            console.error(`載入 ${id} 失敗`, err);
+            return null;
+          }
+        }));
+
+        if (cancelled) return;
+
+        const valid = results.filter(Boolean);
+        setStocks(valid.map(r => r.stock));
+        setWatchlist(valid.map(r => r.stock.id));
+        setRealHistoricalCandles(prev => {
+          const next = { ...prev };
+          valid.forEach(r => { next[r.stock.id] = r.candles; });
+          return next;
+        });
+        if (valid.length > 0) setSelectedStock(valid[0].stock);
+      } catch (err) {
+        console.error('載入自選清單失敗', err);
+      } finally {
+        if (!cancelled) setWatchlistLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fetchFullStockData]);
+
+  // 更新自選清單內所有個股的今日最新真實行情（手動刷新按鈕）
+  const loadRealStockPrices = useCallback(async () => {
     setRealDataLoading(true);
     try {
       const updatedStocks = await Promise.all(
-        targetStocks.map(async (stock) => {
+        stocks.map(async (stock) => {
           try {
-            const data = await fetchFinMindDailyPrice(stock.id);
-            if (data && data.length > 0) {
-              const latest = data[data.length - 1];
-              const prev = data.length > 1 ? data[data.length - 2] : latest;
-              const closePrice = latest.close;
-              const changeAmount = parseFloat((closePrice - prev.close).toFixed(1));
-              const changePercent = prev.close > 0 ? parseFloat(((changeAmount / prev.close) * 100).toFixed(2)) : 0;
-              const volumeK = Math.round(latest.Trading_Volume / 1000).toLocaleString();
-
-              // 抓取三大法人籌碼數據
-              let chips = stock.chips;
-              try {
-                const chipsData = await fetchFinMindInstitutionalInvestors(stock.id);
-                if (chipsData && chipsData.length > 0) {
-                  const latestDate = chipsData[chipsData.length - 1].date;
-                  const latestChips = chipsData.filter(c => c.date === latestDate);
-
-                  let foreign = 0;
-                  let trust = 0;
-                  let dealer = 0;
-
-                  latestChips.forEach(item => {
-                    const diffZhang = Math.round((item.buy - item.sell) / 1000);
-                    if (item.name === 'Foreign_Investor') foreign = diffZhang;
-                    if (item.name === 'Investment_Trust') trust = diffZhang;
-                    if (item.name === 'Dealer_self' || item.name === 'Dealer_Hedging') dealer += diffZhang;
-                  });
-
-                  chips = { foreign, trust, dealer };
-                }
-              } catch (err) {
-                console.warn(`無法取得 ${stock.name} 籌碼數據，使用預設值`, err);
-              }
-
-              // 抓取財務季度 (EPS)
-              let eps = stock.eps;
-              try {
-                const finData = await fetchFinMindFinancialStatements(stock.id);
-                if (finData && finData.length > 0) {
-                  const epsItems = finData.filter(f => f.type === 'EPS');
-                  if (epsItems.length > 0) {
-                    eps = epsItems[epsItems.length - 1].value;
-                  }
-                }
-              } catch (err) {
-                console.warn(`無法取得 ${stock.name} 財務數據，使用預設值`, err);
-              }
-
-              return {
-                ...stock,
-                price: closePrice,
-                change: changeAmount,
-                changePercent: changePercent,
-                volume: volumeK,
-                chips: chips,
-                eps: eps
-              };
-            }
+            const { stock: refreshed } = await fetchFullStockData(stock.id);
+            return refreshed;
           } catch (error) {
             console.error(`載入真實股價失敗: ${stock.id}`, error);
+            return stock;
           }
-          return stock;
         })
       );
 
       setStocks(updatedStocks);
-
-      // 同步更新當前選擇的股票資訊
-      const currentSelected = updatedStocks.find(s => s.id === selectedStock.id);
+      const currentSelected = selectedStock && updatedStocks.find(s => s.id === selectedStock.id);
       if (currentSelected) {
         setSelectedStock(currentSelected);
       }
@@ -733,9 +771,9 @@ function App() {
     } finally {
       setRealDataLoading(false);
     }
-  }, [selectedStock.id]);
+  }, [stocks, selectedStock, fetchFullStockData]);
 
-  // 載入特定股票的歷史日 K 線
+  // 載入特定股票的歷史日 K 線（切換選中股票時，若尚未快取）
   const loadHistoricalCandles = useCallback(async (stockId) => {
     if (realHistoricalCandles[stockId]) return;
     try {
@@ -759,19 +797,12 @@ function App() {
     }
   }, [realHistoricalCandles]);
 
-  // 切換數據源或初始化時加載真實資料
   useEffect(() => {
-    if (dataSource === 'real') {
-      loadRealStockPrices();
-    }
-  }, [dataSource]);
-
-  // 切換股票或資料源時，加載歷史 K 線
-  useEffect(() => {
-    if (dataSource === 'real') {
+    if (selectedStock) {
       loadHistoricalCandles(selectedStock.id);
     }
-  }, [selectedStock.id, dataSource]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStock?.id]);
 
   // 同步手機預覽版分頁與寬螢幕主分頁，防止裝置模式切換時視圖錯亂
   useEffect(() => {
@@ -790,55 +821,22 @@ function App() {
         setActiveTab('watchlist');
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widescreenTab]);
-
-  useEffect(() => {
-    let interval;
-    if (simulating && dataSource === 'mock') {
-      interval = setInterval(() => {
-        setStocks(prevStocks => {
-          const randomIndex = Math.floor(Math.random() * prevStocks.length);
-          const targetStock = prevStocks[randomIndex];
-          const tickDirection = Math.random() > 0.45 ? 1 : -1;
-          const tickValue = parseFloat((Math.random() * (targetStock.price * 0.003)).toFixed(1)) * tickDirection;
-          const newPrice = Math.max(1, parseFloat((targetStock.price + tickValue).toFixed(1)));
-          const newChange = parseFloat((targetStock.change + tickValue).toFixed(1));
-          const newPercent = parseFloat(((newChange / (newPrice - newChange)) * 105).toFixed(2));
-          setTickEffect(prev => ({ ...prev, [targetStock.id]: tickDirection > 0 ? 'up' : 'down' }));
-          setTimeout(() => { setTickEffect(prev => ({ ...prev, [targetStock.id]: null })); }, 600);
-          return prevStocks.map((s, idx) => idx === randomIndex ? { ...s, price: newPrice, change: newChange, changePercent: newPercent } : s);
-        });
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [simulating, dataSource]);
 
   const getTrendColors = (value) => {
     const isPositive = value >= 0;
-    if (themeMode === 'taiwan') {
-      return {
-        text: isPositive ? 'text-[#ff453a] font-black' : 'text-[#30d158] font-black',
-        bg: isPositive ? 'bg-[#ff453a]/20' : 'bg-[#30d158]/20',
-        solidBg: isPositive ? 'bg-[#ff453a]' : 'bg-[#30d158]',
-        border: isPositive ? 'border-[#ff453a]/50' : 'border-[#30d158]/50',
-        iconColor: isPositive ? '#ff453a' : '#30d158'
-      };
-    } else {
-      return {
-        text: isPositive ? 'text-[#30d158] font-black' : 'text-[#ff453a] font-black',
-        bg: isPositive ? 'bg-[#30d158]/20' : 'bg-[#ff453a]/20',
-        solidBg: isPositive ? 'bg-[#30d158]' : 'bg-[#ff453a]',
-        border: isPositive ? 'border-[#30d158]/50' : 'border-[#ff453a]/50',
-        iconColor: isPositive ? '#30d158' : '#ff453a'
-      };
-    }
+    return {
+      text: isPositive ? 'text-[#ff453a] font-black' : 'text-[#30d158] font-black',
+      bg: isPositive ? 'bg-[#ff453a]/20' : 'bg-[#30d158]/20',
+      solidBg: isPositive ? 'bg-[#ff453a]' : 'bg-[#30d158]',
+      border: isPositive ? 'border-[#ff453a]/50' : 'border-[#30d158]/50',
+      iconColor: isPositive ? '#ff453a' : '#30d158'
+    };
   };
 
   const currentCandles = useMemo(() => {
-    if (dataSource === 'mock') {
-      return HISTORICAL_SAMPLES[timeRange] || [];
-    }
-
+    if (!selectedStock) return [];
     const allCandles = realHistoricalCandles[selectedStock.id] || [];
     if (allCandles.length === 0) {
       return HISTORICAL_SAMPLES[timeRange] || [];
@@ -859,133 +857,46 @@ function App() {
       default:
         return allCandles;
     }
-  }, [dataSource, timeRange, selectedStock.id, realHistoricalCandles]);
+  }, [timeRange, selectedStock, realHistoricalCandles]);
 
   const handleAddStock = async (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
 
-    const inputId = searchQuery.trim().toUpperCase();
-    const cleanId = inputId.includes('.TW') ? inputId : inputId + '.TW';
-    const pureId = formatFinMindId(cleanId);
+    setRealDataLoading(true);
+    try {
+      const { stock, candles } = await fetchFullStockData(searchQuery.trim().toUpperCase());
 
-    if (dataSource === 'real') {
-      setRealDataLoading(true);
-      try {
-        const data = await fetchFinMindDailyPrice(pureId);
-        if (data && data.length > 0) {
-          const latest = data[data.length - 1];
-          const prev = data.length > 1 ? data[data.length - 2] : latest;
-          const closePrice = latest.close;
-          const changeAmount = parseFloat((closePrice - prev.close).toFixed(1));
-          const changePercent = prev.close > 0 ? parseFloat(((changeAmount / prev.close) * 100).toFixed(2)) : 0;
-          const volumeK = Math.round(latest.Trading_Volume / 1000).toLocaleString();
-
-          // 籌碼
-          let chips = { foreign: 0, trust: 0, dealer: 0 };
-          try {
-            const chipsData = await fetchFinMindInstitutionalInvestors(pureId);
-            if (chipsData && chipsData.length > 0) {
-              const latestDate = chipsData[chipsData.length - 1].date;
-              const latestChips = chipsData.filter(c => c.date === latestDate);
-              let foreign = 0; let trust = 0; let dealer = 0;
-              latestChips.forEach(item => {
-                const diffZhang = Math.round((item.buy - item.sell) / 1000);
-                if (item.name === 'Foreign_Investor') foreign = diffZhang;
-                if (item.name === 'Investment_Trust') trust = diffZhang;
-                if (item.name === 'Dealer_self' || item.name === 'Dealer_Hedging') dealer += diffZhang;
-              });
-              chips = { foreign, trust, dealer };
-            }
-          } catch (err) { console.warn("無法取得新增個股之籌碼數據", err); }
-
-          // 財務 (EPS)
-          let eps = 0;
-          try {
-            const finData = await fetchFinMindFinancialStatements(pureId);
-            if (finData && finData.length > 0) {
-              const epsItems = finData.filter(f => f.type === 'EPS');
-              if (epsItems.length > 0) eps = epsItems[epsItems.length - 1].value;
-            }
-          } catch (err) { console.warn("無法取得新增個股之財報數據", err); }
-
-          // 取得股票中文名稱與分類
-          let name = '台股 ' + pureId;
-          let category = '自選股';
-          try {
-            const info = await fetchFinMindStockInfo(pureId);
-            name = info.name;
-            category = info.category;
-          } catch (err) {
-            console.warn("無法取得新增個股之基本資訊", err);
-          }
-
-          const newStock = {
-            id: cleanId,
-            name: name,
-            price: closePrice,
-            change: changeAmount,
-            changePercent: changePercent,
-            volume: volumeK,
-            category: category,
-            eps: eps,
-            yoy: 15.0,
-            roe: 12.0,
-            chips: chips
-          };
-
-          const converted = data.map(item => ({
-            time: item.date,
-            open: item.open,
-            high: item.max,
-            low: item.min,
-            close: item.close,
-            volume: Math.round(item.Trading_Volume / 1000)
-          }));
-          setRealHistoricalCandles(prev => ({ ...prev, [cleanId]: converted }));
-
-          setStocks(prev => [newStock, ...prev]);
-          setWatchlist(prev => [cleanId, ...prev]);
-          setSelectedStock(newStock);
-          setSearchQuery('');
-          setShowAddModal(false);
-        } else {
-          alert('查無此台股代碼，請確認後輸入！');
-        }
-      } catch (error) {
-        console.error("驗證新增個股失敗", error);
-        alert('載入此台股數據失敗，請確認代碼是否正確 (例如 2002 或 2330)。');
-      } finally {
-        setRealDataLoading(false);
-      }
-    } else {
-      const randomPrice = Math.floor(Math.random() * 800) + 20;
-      const newStock = {
-        id: cleanId,
-        name: searchQuery.trim().match(/^[0-9]+$/) ? '代號 ' + searchQuery.trim() : searchQuery.trim(),
-        price: randomPrice,
-        change: parseFloat((Math.random() * 10 - 5).toFixed(1)),
-        changePercent: parseFloat((Math.random() * 4 - 2).toFixed(2)),
-        volume: Math.floor(Math.random() * 50) + 1 + ',000',
-        category: '自訂標的',
-        eps: parseFloat((Math.random() * 15).toFixed(2)),
-        yoy: parseFloat((Math.random() * 40 - 10).toFixed(1)),
-        roe: parseFloat((Math.random() * 25).toFixed(1)),
-        chips: { foreign: Math.floor(Math.random() * 4000) - 2000, trust: Math.floor(Math.random() * 2000) - 1000, dealer: Math.floor(Math.random() * 1000) - 500 }
-      };
-      setStocks(prev => [newStock, ...prev]);
-      setWatchlist(prev => [newStock.id, ...prev]);
-      setSelectedStock(newStock);
+      setRealHistoricalCandles(prev => ({ ...prev, [stock.id]: candles }));
+      setStocks(prev => [stock, ...prev]);
+      setWatchlist(prev => [stock.id, ...prev]);
+      setSelectedStock(stock);
       setSearchQuery('');
       setShowAddModal(false);
+
+      await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stockId: stock.id }),
+      });
+    } catch (error) {
+      console.error("驗證新增個股失敗", error);
+      alert('載入此台股數據失敗，請確認代碼是否正確 (例如 2002 或 2330)。');
+    } finally {
+      setRealDataLoading(false);
     }
   };
 
-  const handleRemoveStock = (id) => {
+  const handleRemoveStock = async (id) => {
     setWatchlist(prev => prev.filter(item => item !== id));
-    if (selectedStock.id === id) {
+    if (selectedStock && selectedStock.id === id) {
       const remaining = stocks.filter(s => s.id !== id && watchlist.includes(s.id));
       if (remaining.length > 0) setSelectedStock(remaining[0]);
+    }
+    try {
+      await fetch(`/api/watchlist?stockId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('刪除自選股失敗', err);
     }
   };
 
@@ -999,6 +910,17 @@ function App() {
       setAiLoading(false);
     }, 1500);
   };
+
+  if (watchlistLoading || !selectedStock) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center bg-[#090a0c]">
+        <div className="text-center space-y-3">
+          <span className="w-3 h-3 rounded-full bg-[#3e63dd] animate-ping inline-block" />
+          <p className="text-xs text-[#9ba1a6] font-bold">載入自選清單中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-h-screen flex flex-col">
@@ -1015,7 +937,6 @@ function App() {
             <p className="text-xs text-[#a0a5ad] font-bold mt-0.5">專為暗光環境優化的清晰視覺系統</p>
           </div>
         </div>
-        {/* 寬螢幕主分頁切換 (手機預覽模式下隱藏) */}
         {widescreenTab === 'guide' && (
           <div className="hidden md:flex bg-[#16181b] border-2 border-[#22252a] p-1 rounded-xl items-center text-xs">
             <button onClick={() => setWidescreenTab('dashboard')} className="px-4 py-1.5 rounded-lg font-black transition-all flex items-center gap-1.5 bg-[#22252a] text-[#3e63dd] border border-[#3e63dd]/20 shadow text-white">
@@ -1025,14 +946,6 @@ function App() {
         )}
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <div className="bg-[#16181b] border-2 border-[#2f3238] p-1 rounded-xl flex items-center">
-            <button onClick={() => setDataSource('real')} className={'px-4 py-1.5 rounded-lg font-black transition-all ' + (dataSource === 'real' ? 'bg-[#22252a] text-[#3e63dd] border-2 border-[#3e63dd]/30 shadow' : 'text-[#888d92]')}>真實台股</button>
-            <button onClick={() => setDataSource('mock')} className={'px-4 py-1.5 rounded-lg font-black transition-all ' + (dataSource === 'mock' ? 'bg-[#22252a] text-[#ffb224] border-2 border-[#ffb224]/30 shadow' : 'text-[#888d92]')}>模擬測試</button>
-          </div>
-          <div className="bg-[#16181b] border-2 border-[#2f3238] p-1 rounded-xl flex items-center">
-            <button onClick={() => setThemeMode('taiwan')} className={'px-4 py-1.5 rounded-lg font-black transition-all ' + (themeMode === 'taiwan' ? 'bg-[#22252a] text-[#ff453a] border-2 border-[#ff453a]/30 shadow' : 'text-[#888d92]')}>台股配色</button>
-            <button onClick={() => setThemeMode('international')} className={'px-4 py-1.5 rounded-lg font-black transition-all ' + (themeMode === 'international' ? 'bg-[#22252a] text-[#30d158] border-2 border-[#30d158]/30 shadow' : 'text-[#888d92]')}>國際配色</button>
-          </div>
-          <div className="bg-[#16181b] border-2 border-[#2f3238] p-1 rounded-xl flex items-center">
             <button onClick={() => setDeviceMode('phone')} className={'p-1.5 px-4 rounded-lg flex items-center gap-1.5 transition-all font-black ' + (deviceMode === 'phone' ? 'bg-[#22252a] text-white' : 'text-[#888d92]')}>
               <Icon name="smartphone" className="w-4 h-4" /> 手機版
             </button>
@@ -1040,16 +953,17 @@ function App() {
               <Icon name="monitor" className="w-4 h-4" /> 電腦版
             </button>
           </div>
-          {dataSource === 'real' ? (
-            <button onClick={() => loadRealStockPrices()} disabled={realDataLoading} className={'px-3 py-1.5 rounded-lg border-2 flex items-center gap-1.5 font-black transition-all ' + (realDataLoading ? 'bg-[#3e63dd]/15 border-[#3e63dd]/50 text-[#3e63dd]' : 'bg-[#1a1c1e] border-[#2d3034] text-[#888d92] hover:text-white')}>
-              <Icon name="refreshCw" className={'w-3.5 h-3.5 ' + (realDataLoading ? 'animate-spin' : '')} />
-              {realDataLoading ? '更新中' : '更新數據'}
-            </button>
-          ) : (
-            <button onClick={() => setSimulating(!simulating)} className={'px-3 py-1.5 rounded-lg border-2 flex items-center gap-1.5 font-black transition-all ' + (simulating ? 'bg-[#ffb224]/15 border-[#ffb224]/50 text-[#ffb224]' : 'bg-[#1a1c1e] border-[#2d3034] text-[#888d92]')}>
-              <Icon name="refreshCw" className={'w-3.5 h-3.5 ' + (simulating ? 'animate-spin' : '')} />
-              {simulating ? '模擬中' : '已暫停'}
-            </button>
+          <button onClick={() => loadRealStockPrices()} disabled={realDataLoading} className={'px-3 py-1.5 rounded-lg border-2 flex items-center gap-1.5 font-black transition-all ' + (realDataLoading ? 'bg-[#3e63dd]/15 border-[#3e63dd]/50 text-[#3e63dd]' : 'bg-[#1a1c1e] border-[#2d3034] text-[#888d92] hover:text-white')}>
+            <Icon name="refreshCw" className={'w-3.5 h-3.5 ' + (realDataLoading ? 'animate-spin' : '')} />
+            {realDataLoading ? '更新中' : '更新數據'}
+          </button>
+          {user && (
+            <div className="flex items-center gap-2 bg-[#16181b] border-2 border-[#2f3238] rounded-xl px-3 py-1.5">
+              <span className="text-[#9ba1a6] font-bold max-w-[140px] truncate">{user.email}</span>
+              <button onClick={() => signOut()} className="text-[#888d92] hover:text-white flex items-center gap-1 font-black">
+                <Icon name="logOut" className="w-3.5 h-3.5" /> 登出
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -1092,7 +1006,7 @@ function App() {
         ) : widescreenTab === 'guide' ? (
           /* WIDESCREEN KLINE GUIDE VIEW */
           <div className="w-full" style={{ minHeight: 'calc(100vh - 120px)' }}>
-            <KlineGuide themeMode={themeMode} />
+            <KlineGuide />
           </div>
         ) : (
           /* FULLSCREEN WIDESCREEN */
@@ -1114,12 +1028,10 @@ function App() {
                 {stocks.filter(s => watchlist.includes(s.id)).map(stock => {
                   const colors = getTrendColors(stock.change);
                   const isSelected = selectedStock.id === stock.id;
-                  const isFlashing = tickEffect[stock.id];
                   return (
                     <div key={stock.id} onClick={() => setSelectedStock(stock)}
                       className={'p-3 rounded-lg border-2 transition-all cursor-pointer flex justify-between items-center '
-                        + (isSelected ? 'bg-[#1a1d23] border-[#3e63dd] shadow-lg shadow-[#3e63dd]/15 scale-[0.99]' : 'bg-[#15171a] border-[#1f2226] hover:border-[#32363b]')
-                        + (isFlashing === 'up' ? ' border-[#ff453a] bg-[#ff453a]/15' : isFlashing === 'down' ? ' border-[#30d158] bg-[#30d158]/15' : '')}>
+                        + (isSelected ? 'bg-[#1a1d23] border-[#3e63dd] shadow-lg shadow-[#3e63dd]/15 scale-[0.99]' : 'bg-[#15171a] border-[#1f2226] hover:border-[#32363b]')}>
                       <div>
                         <div className="text-sm font-bold text-white flex items-center gap-1.5">{stock.name}<span className="text-xs text-slate-300 font-mono font-bold">{stock.id}</span></div>
                         <span className="text-xs text-slate-400 font-bold">{stock.category}</span>
@@ -1167,7 +1079,6 @@ function App() {
 
               {/* 走勢圖區域（折線 / K線 可切換） */}
               <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-4 shadow-md flex-shrink-0 flex flex-col">
-                {/* 標題列 */}
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                   <span className="text-sm font-black text-white flex items-center gap-1.5">
                     <Icon name="activity" className="w-5 h-5 text-[#3e63dd]" />
@@ -1175,7 +1086,6 @@ function App() {
                     <span className="text-xs text-[#9ba1a6] font-normal ml-1">(含格線・Tooltip{chartType === 'candle' ? '・成交量' : ''})</span>
                   </span>
                   <div className="flex items-center gap-2">
-                    {/* 圖表類型切換 */}
                     <div className="flex bg-[#0d0f12] p-1 rounded-lg border-2 border-[#2a2e36] text-xs">
                       <button
                         onClick={() => setChartType('line')}
@@ -1190,7 +1100,6 @@ function App() {
                         K線
                       </button>
                     </div>
-                    {/* 時間區間 */}
                     <div className="flex bg-[#16181a] p-1 rounded-lg border-2 border-[#2d3137] text-xs">
                       {['1D', '5D', '1M', '3M', '1Y'].map(r => (
                         <button key={r} onClick={() => setTimeRange(r)} className={'px-3 py-1 rounded-md font-black transition-all ' + (timeRange === r ? 'bg-[#22252a] text-white shadow' : 'text-[#888d92]')}>{r}</button>
@@ -1199,18 +1108,15 @@ function App() {
                   </div>
                 </div>
 
-                {/* 圖表本體 */}
                 {chartType === 'line' ? (
                   <WidescreenLineChart
                     trendColors={getTrendColors(selectedStock.change)}
                     candles={currentCandles}
-                    themeMode={themeMode}
                   />
                 ) : (
                   <CandlestickChart
                     trendColors={getTrendColors(selectedStock.change)}
                     candles={currentCandles}
-                    themeMode={themeMode}
                   />
                 )}
               </div>
@@ -1229,7 +1135,7 @@ function App() {
                       <div>YoY: <span className={getTrendColors(selectedStock.yoy).text}>{selectedStock.yoy}%</span></div>
                       <div>ROE: <span className="text-white font-mono">{selectedStock.roe}%</span></div>
                     </div>
-                    <div className="flex-shrink-0"><FinancialRadar stock={selectedStock} /></div>
+                    <div className="flex-shrink-0"><FinancialRadar /></div>
                   </div>
                 </div>
                 <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3 flex flex-col justify-between shadow-md" style={{ minHeight: '160px' }}>
@@ -1340,7 +1246,7 @@ function App() {
           </div>
         );
       case 'guide':
-        return <KlineGuide themeMode={themeMode} />;
+        return <KlineGuide />;
       default:
         return null;
     }
@@ -1351,7 +1257,7 @@ function App() {
    WidescreenLineChart - 寬螢幕版折線走勢圖
    帶格線、Y軸標籤、漸層填滿、滑鼠 Tooltip
    ===================================================== */
-function WidescreenLineChart({ trendColors, candles = [], themeMode }) {
+function WidescreenLineChart({ trendColors, candles = [] }) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
@@ -1421,7 +1327,7 @@ function WidescreenLineChart({ trendColors, candles = [], themeMode }) {
     setTooltip({ candle: candles[idx], idx, x: toX(idx), y: toY(candles[idx].close) });
   };
 
-  const gradId = 'wsLineGrad_' + themeMode;
+  const gradId = 'wsLineGrad_taiwan';
 
   return (
     <div ref={containerRef} className="w-full" style={{ userSelect: 'none' }}>
@@ -1524,7 +1430,7 @@ function WidescreenLineChart({ trendColors, candles = [], themeMode }) {
 /* =====================================================
    CandlestickChart - K 線 + 成交量 + 格線 + Tooltip
    ===================================================== */
-function CandlestickChart({ trendColors, candles = [], themeMode }) {
+function CandlestickChart({ trendColors, candles = [] }) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
@@ -1541,8 +1447,8 @@ function CandlestickChart({ trendColors, candles = [], themeMode }) {
     return () => obs.disconnect();
   }, []);
 
-  const upColor = themeMode === 'taiwan' ? '#ff453a' : '#30d158';
-  const downColor = themeMode === 'taiwan' ? '#30d158' : '#ff453a';
+  const upColor = '#ff453a';
+  const downColor = '#30d158';
 
   const W = containerWidth;
   const H_CANDLE = 260;
@@ -1735,7 +1641,7 @@ function CandlestickChart({ trendColors, candles = [], themeMode }) {
         </svg>
       </div>
 
-      <PriceVolumeTable candles={tableData} themeMode={themeMode} />
+      <PriceVolumeTable candles={tableData} />
     </div>
   );
 }
@@ -1743,9 +1649,9 @@ function CandlestickChart({ trendColors, candles = [], themeMode }) {
 /* =====================================================
    PriceVolumeTable - 走勢圖下方價量明細表
    ===================================================== */
-function PriceVolumeTable({ candles, themeMode }) {
-  const upColor = themeMode === 'taiwan' ? '#ff453a' : '#30d158';
-  const downColor = themeMode === 'taiwan' ? '#30d158' : '#ff453a';
+function PriceVolumeTable({ candles }) {
+  const upColor = '#ff453a';
+  const downColor = '#30d158';
 
   return (
     <div className="mt-3 border-t-2 border-[#1a1d22] pt-3">
@@ -1875,8 +1781,3 @@ function FinancialRadar() {
     </svg>
   );
 }
-
-// 初始化 React 應用程式掛載點
-const rootElement = document.getElementById('root');
-const root = ReactDOM.createRoot(rootElement);
-root.render(<App />);

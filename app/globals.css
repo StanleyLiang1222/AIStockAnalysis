@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Styling elegant custom scrollbars inspired by Radix design tokens */
 ::-webkit-scrollbar {
   width: 6px;
@@ -63,4 +67,3 @@
 .fade-in-up {
   animation: fadeInUp 0.4s ease forwards;
 }
-
