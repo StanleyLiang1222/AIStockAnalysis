@@ -1,14 +1,13 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
+import { authConfig } from '@/auth.config';
 import { ensureSchema, isEmailAllowed } from '@/lib/db';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [Google],
-  pages: {
-    signIn: '/login',
-    error: '/access-denied',
-  },
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user }) {
       if (!user?.email) return false;
       await ensureSchema();
