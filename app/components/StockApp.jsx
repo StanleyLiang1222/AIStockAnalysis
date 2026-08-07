@@ -604,6 +604,7 @@ export default function StockApp({ user }) {
   const [selectedStock, setSelectedStock] = useState(null);
   const [watchlist, setWatchlist] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(true);
+  const [watchlistError, setWatchlistError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [timeRange, setTimeRange] = useState('1D');
@@ -697,53 +698,60 @@ export default function StockApp({ user }) {
   }, []);
 
   // 首次載入：從資料庫讀取使用者的自選股清單，若為新使用者則種入預設清單
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setWatchlistLoading(true);
-      try {
-        const res = await fetch('/api/watchlist');
-        const { watchlist: savedIds } = await res.json();
-        let ids = savedIds && savedIds.length > 0 ? savedIds : DEFAULT_WATCHLIST_IDS;
-
-        if (!savedIds || savedIds.length === 0) {
-          await Promise.all(ids.map((id) =>
-            fetch('/api/watchlist', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ stockId: id }),
-            })
-          ));
-        }
-
-        const results = await Promise.all(ids.map(async (id) => {
-          try {
-            return await fetchFullStockData(id);
-          } catch (err) {
-            console.error(`載入 ${id} 失敗`, err);
-            return null;
-          }
-        }));
-
-        if (cancelled) return;
-
-        const valid = results.filter(Boolean);
-        setStocks(valid.map(r => r.stock));
-        setWatchlist(valid.map(r => r.stock.id));
-        setRealHistoricalCandles(prev => {
-          const next = { ...prev };
-          valid.forEach(r => { next[r.stock.id] = r.candles; });
-          return next;
-        });
-        if (valid.length > 0) setSelectedStock(valid[0].stock);
-      } catch (err) {
-        console.error('載入自選清單失敗', err);
-      } finally {
-        if (!cancelled) setWatchlistLoading(false);
+  const loadWatchlist = useCallback(async () => {
+    setWatchlistLoading(true);
+    setWatchlistError(false);
+    try {
+      const res = await fetch('/api/watchlist');
+      if (!res.ok) {
+        throw new Error(`載入自選清單失敗 (HTTP ${res.status})`);
       }
-    })();
-    return () => { cancelled = true; };
+      const { watchlist: savedIds } = await res.json();
+      let ids = savedIds && savedIds.length > 0 ? savedIds : DEFAULT_WATCHLIST_IDS;
+
+      if (!savedIds || savedIds.length === 0) {
+        const seedResults = await Promise.all(ids.map((id) =>
+          fetch('/api/watchlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stockId: id }),
+          })
+        ));
+        if (seedResults.some((r) => !r.ok)) {
+          throw new Error('種入預設自選清單失敗');
+        }
+      }
+
+      const results = await Promise.all(ids.map(async (id) => {
+        try {
+          return await fetchFullStockData(id);
+        } catch (err) {
+          console.error(`載入 ${id} 失敗`, err);
+          return null;
+        }
+      }));
+
+      const valid = results.filter(Boolean);
+      setStocks(valid.map(r => r.stock));
+      setWatchlist(valid.map(r => r.stock.id));
+      setRealHistoricalCandles(prev => {
+        const next = { ...prev };
+        valid.forEach(r => { next[r.stock.id] = r.candles; });
+        return next;
+      });
+      if (valid.length > 0) setSelectedStock(valid[0].stock);
+    } catch (err) {
+      console.error('載入自選清單失敗', err);
+      setWatchlistError(true);
+    } finally {
+      setWatchlistLoading(false);
+    }
   }, [fetchFullStockData]);
+
+  useEffect(() => {
+    loadWatchlist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 更新自選清單內所有個股的今日最新真實行情（手動刷新按鈕）
   const loadRealStockPrices = useCallback(async () => {
@@ -910,6 +918,23 @@ export default function StockApp({ user }) {
       setAiLoading(false);
     }, 1500);
   };
+
+  if (watchlistError) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center bg-[#090a0c] px-4">
+        <div className="bg-[#111315] border-2 border-[#22252a] rounded-2xl p-8 w-full max-w-sm text-center space-y-3">
+          <h1 className="text-lg font-black text-[#ff453a]">無法連線</h1>
+          <p className="text-xs text-[#9ba1a6] font-bold">請確認 Supabase 是否有啟動。</p>
+          <button
+            onClick={loadWatchlist}
+            className="mt-2 px-4 py-2 bg-[#3e63dd] hover:bg-[#3451b2] text-white text-xs font-black rounded-lg transition-all"
+          >
+            重試
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (watchlistLoading || !selectedStock) {
     return (
