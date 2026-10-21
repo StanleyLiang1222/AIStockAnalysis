@@ -5,6 +5,7 @@ import { authConfig } from '@/auth.config';
 export const { auth: middleware } = NextAuth(authConfig);
 
 export const config = {
-  // 除了登入相關路由與靜態資源以外，其餘所有路徑都需要先登入
-  matcher: ['/((?!api/auth|login|access-denied|_next/static|_next/image|favicon.ico).*)'],
+  // 頁面一律需要先登入。API 不經過 middleware：route handler 自己檢查 session 並回 401 JSON，
+  // 否則 fetch 會被 307 導到 /login、拿到 HTML，前端無法分辨是 session 過期還是伺服器錯誤。
+  matcher: ['/((?!api|login|access-denied|_next/static|_next/image|favicon.ico).*)'],
 };

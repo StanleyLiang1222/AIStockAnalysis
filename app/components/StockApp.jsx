@@ -4,10 +4,51 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { signOut } from 'next-auth/react';
 
 /**
- * 預設自選股（新使用者第一次登入時，會拿這份清單種入資料庫）
- * @type {Array<string>}
+ * 台股代碼格式（與 /api/watchlist 伺服器端驗證一致）
  */
-const DEFAULT_WATCHLIST_IDS = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2881.TW'];
+const STOCK_ID_PATTERN = /^\d{4,6}[A-Z]?\.TW$/;
+
+/**
+ * 使用者輸入（2330 / 2330.tw）統一轉成 2330.TW
+ */
+const normalizeStockId = (raw) => {
+  const id = raw.trim().toUpperCase();
+  if (!id) return '';
+  return id.endsWith('.TW') ? id : id + '.TW';
+};
+
+class WatchlistApiError extends Error {
+  constructor(status) {
+    super(`watchlist API 回應 ${status}`);
+    this.status = status;
+  }
+}
+
+/**
+ * 呼叫 /api/watchlist。401（session 過期）直接導回登入頁；其他失敗一律丟出 WatchlistApiError，
+ * 網路層錯誤則是 fetch 本身丟出的 TypeError。
+ */
+async function callWatchlistApi(method, stockId) {
+  const init = { method };
+  let url = '/api/watchlist';
+  if (method === 'POST') {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify({ stockId });
+  } else if (method === 'DELETE') {
+    url += `?stockId=${encodeURIComponent(stockId)}`;
+  }
+
+  const res = await fetch(url, init);
+  if (res.status === 401) {
+    window.location.href = '/login';
+    throw new WatchlistApiError(401);
+  }
+  if (!res.ok) {
+    throw new WatchlistApiError(res.status);
+  }
+  const { watchlist } = await res.json();
+  return watchlist;
+}
 
 /**
  * 將個股 ID (e.g. 2330.TW 或 2330) 轉換為 FinMind 格式 (e.g. 2330)
@@ -604,7 +645,7 @@ export default function StockApp({ user }) {
   const [selectedStock, setSelectedStock] = useState(null);
   const [watchlist, setWatchlist] = useState([]);
   const [watchlistLoading, setWatchlistLoading] = useState(true);
-  const [watchlistError, setWatchlistError] = useState(false);
+  const [watchlistError, setWatchlistError] = useState(null); // null | 'db' | 'quote'
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [timeRange, setTimeRange] = useState('1D');
@@ -697,55 +738,48 @@ export default function StockApp({ user }) {
     return { stock, candles };
   }, []);
 
-  // 首次載入：從資料庫讀取使用者的自選股清單，若為新使用者則種入預設清單
+  // 首次載入：從資料庫讀取使用者的自選股清單（新使用者的預設清單由伺服器端種入）
   const loadWatchlist = useCallback(async () => {
     setWatchlistLoading(true);
-    setWatchlistError(false);
+    setWatchlistError(null);
+
+    let ids;
     try {
-      const res = await fetch('/api/watchlist');
-      if (!res.ok) {
-        throw new Error(`載入自選清單失敗 (HTTP ${res.status})`);
-      }
-      const { watchlist: savedIds } = await res.json();
-      let ids = savedIds && savedIds.length > 0 ? savedIds : DEFAULT_WATCHLIST_IDS;
-
-      if (!savedIds || savedIds.length === 0) {
-        const seedResults = await Promise.all(ids.map((id) =>
-          fetch('/api/watchlist', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ stockId: id }),
-          })
-        ));
-        if (seedResults.some((r) => !r.ok)) {
-          throw new Error('種入預設自選清單失敗');
-        }
-      }
-
-      const results = await Promise.all(ids.map(async (id) => {
-        try {
-          return await fetchFullStockData(id);
-        } catch (err) {
-          console.error(`載入 ${id} 失敗`, err);
-          return null;
-        }
-      }));
-
-      const valid = results.filter(Boolean);
-      setStocks(valid.map(r => r.stock));
-      setWatchlist(valid.map(r => r.stock.id));
-      setRealHistoricalCandles(prev => {
-        const next = { ...prev };
-        valid.forEach(r => { next[r.stock.id] = r.candles; });
-        return next;
-      });
-      if (valid.length > 0) setSelectedStock(valid[0].stock);
+      ids = await callWatchlistApi('GET');
     } catch (err) {
+      if (err.status === 401) return; // 已導向登入頁，維持載入畫面
       console.error('載入自選清單失敗', err);
-      setWatchlistError(true);
-    } finally {
+      setWatchlistError('db');
       setWatchlistLoading(false);
+      return;
     }
+
+    const results = await Promise.all(ids.map(async (id) => {
+      try {
+        return await fetchFullStockData(id);
+      } catch (err) {
+        console.error(`載入 ${id} 失敗`, err);
+        return null;
+      }
+    }));
+
+    const valid = results.filter(Boolean);
+    // 清單裡有股票但一檔都抓不到：是 FinMind 的問題，不是清單真的空了
+    if (ids.length > 0 && valid.length === 0) {
+      setWatchlistError('quote');
+      setWatchlistLoading(false);
+      return;
+    }
+
+    setStocks(valid.map(r => r.stock));
+    setWatchlist(valid.map(r => r.stock.id));
+    setRealHistoricalCandles(prev => {
+      const next = { ...prev };
+      valid.forEach(r => { next[r.stock.id] = r.candles; });
+      return next;
+    });
+    setSelectedStock(valid[0]?.stock ?? null);
+    setWatchlistLoading(false);
   }, [fetchFullStockData]);
 
   useEffect(() => {
@@ -757,19 +791,24 @@ export default function StockApp({ user }) {
   const loadRealStockPrices = useCallback(async () => {
     setRealDataLoading(true);
     try {
-      const updatedStocks = await Promise.all(
+      const results = await Promise.all(
         stocks.map(async (stock) => {
           try {
-            const { stock: refreshed } = await fetchFullStockData(stock.id);
-            return refreshed;
+            return await fetchFullStockData(stock.id);
           } catch (error) {
             console.error(`載入真實股價失敗: ${stock.id}`, error);
-            return stock;
+            return { stock, candles: null };
           }
         })
       );
 
+      const updatedStocks = results.map(r => r.stock);
       setStocks(updatedStocks);
+      setRealHistoricalCandles(prev => {
+        const next = { ...prev };
+        results.forEach(r => { if (r.candles) next[r.stock.id] = r.candles; });
+        return next;
+      });
       const currentSelected = selectedStock && updatedStocks.find(s => s.id === selectedStock.id);
       if (currentSelected) {
         setSelectedStock(currentSelected);
@@ -869,42 +908,84 @@ export default function StockApp({ user }) {
 
   const handleAddStock = async (e) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    const stockId = normalizeStockId(searchQuery);
+    if (!stockId) return;
+
+    if (!STOCK_ID_PATTERN.test(stockId)) {
+      alert('請輸入台股代碼，例如 2330 或 00878。');
+      return;
+    }
+
+    if (watchlist.includes(stockId)) {
+      const existing = stocks.find(s => s.id === stockId);
+      if (existing) setSelectedStock(existing);
+      setSearchQuery('');
+      setShowAddModal(false);
+      alert('此標的已在自選清單中。');
+      return;
+    }
 
     setRealDataLoading(true);
     try {
-      const { stock, candles } = await fetchFullStockData(searchQuery.trim().toUpperCase());
+      let fetched;
+      try {
+        fetched = await fetchFullStockData(stockId);
+      } catch (error) {
+        console.error("驗證新增個股失敗", error);
+        alert('載入此台股數據失敗，請確認代碼是否正確 (例如 2002 或 2330)。');
+        return;
+      }
 
+      // 先寫入資料庫成功，才更新畫面，避免畫面有、資料庫沒有，重整後消失
+      try {
+        await callWatchlistApi('POST', stockId);
+      } catch (error) {
+        if (error.status === 401) return;
+        console.error('儲存自選股失敗', error);
+        alert('自選股儲存失敗，請確認 Supabase 是否有啟動後再試一次。');
+        return;
+      }
+
+      const { stock, candles } = fetched;
       setRealHistoricalCandles(prev => ({ ...prev, [stock.id]: candles }));
-      setStocks(prev => [stock, ...prev]);
+      setStocks(prev => [stock, ...prev.filter(s => s.id !== stock.id)]);
       setWatchlist(prev => [stock.id, ...prev]);
       setSelectedStock(stock);
       setSearchQuery('');
       setShowAddModal(false);
-
-      await fetch('/api/watchlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stockId: stock.id }),
-      });
-    } catch (error) {
-      console.error("驗證新增個股失敗", error);
-      alert('載入此台股數據失敗，請確認代碼是否正確 (例如 2002 或 2330)。');
     } finally {
       setRealDataLoading(false);
     }
   };
 
+  // 先從畫面移除，API 失敗再放回原位置
   const handleRemoveStock = async (id) => {
-    setWatchlist(prev => prev.filter(item => item !== id));
-    if (selectedStock && selectedStock.id === id) {
-      const remaining = stocks.filter(s => s.id !== id && watchlist.includes(s.id));
-      if (remaining.length > 0) setSelectedStock(remaining[0]);
+    const originalIndex = watchlist.indexOf(id);
+    const wasSelected = selectedStock?.id === id;
+    const nextWatchlist = watchlist.filter(item => item !== id);
+
+    setWatchlist(nextWatchlist);
+    if (wasSelected) {
+      setSelectedStock(stocks.find(s => nextWatchlist.includes(s.id)) ?? null);
     }
+
     try {
-      await fetch(`/api/watchlist?stockId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await callWatchlistApi('DELETE', id);
+      setStocks(prev => prev.filter(s => s.id !== id));
     } catch (err) {
+      if (err.status === 401) return;
       console.error('刪除自選股失敗', err);
+      setWatchlist(prev => {
+        if (prev.includes(id)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(originalIndex, next.length), 0, id);
+        return next;
+      });
+      if (wasSelected) {
+        const original = stocks.find(s => s.id === id);
+        if (original) setSelectedStock(original);
+      }
+      alert('刪除失敗，請確認 Supabase 是否有啟動後再試一次。');
     }
   };
 
@@ -919,12 +1000,36 @@ export default function StockApp({ user }) {
     }, 1500);
   };
 
+  const addModal = showAddModal && (
+    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#111315] border-2 border-[#2d3035] w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl">
+        <div className="px-5 py-3 border-b-2 border-[#1f2125] flex justify-between items-center">
+          <h4 className="text-sm font-black text-white flex items-center gap-1.5"><Icon name="plus" className="w-4 h-4 text-[#3e63dd] stroke-[2.5]" /> 新增自選監控標的</h4>
+          <button onClick={() => setShowAddModal(false)} className="text-[#888d92] hover:text-white text-xs font-black">關閉</button>
+        </div>
+        <form onSubmit={handleAddStock} className="p-5 space-y-3">
+          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="輸入台股代碼，例如: 2330, 00878"
+            className="w-full bg-[#16181a] border-2 border-[#2d3137] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-[#6f737a] font-bold focus:outline-none focus:border-[#3e63dd]"
+            autoFocus />
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-2 bg-[#1a1c1e] text-slate-400 text-xs font-bold rounded-lg border-2 border-[#2a2d32]">取消</button>
+            <button type="submit" disabled={realDataLoading} className="flex-1 py-2 bg-[#3e63dd] text-white text-xs font-bold rounded-lg hover:bg-[#3451b2]">{realDataLoading ? '新增中...' : '確認新增'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
   if (watchlistError) {
+    const { title, message } = watchlistError === 'quote'
+      ? { title: '無法取得股價', message: 'FinMind 股價資料暫時無法取得，請稍後再試。' }
+      : { title: '無法連線', message: '請確認 Supabase 是否有啟動。' };
     return (
       <div className="w-full min-h-screen flex items-center justify-center bg-[#090a0c] px-4">
         <div className="bg-[#111315] border-2 border-[#22252a] rounded-2xl p-8 w-full max-w-sm text-center space-y-3">
-          <h1 className="text-lg font-black text-[#ff453a]">無法連線</h1>
-          <p className="text-xs text-[#9ba1a6] font-bold">請確認 Supabase 是否有啟動。</p>
+          <h1 className="text-lg font-black text-[#ff453a]">{title}</h1>
+          <p className="text-xs text-[#9ba1a6] font-bold">{message}</p>
           <button
             onClick={loadWatchlist}
             className="mt-2 px-4 py-2 bg-[#3e63dd] hover:bg-[#3451b2] text-white text-xs font-black rounded-lg transition-all"
@@ -936,13 +1041,35 @@ export default function StockApp({ user }) {
     );
   }
 
-  if (watchlistLoading || !selectedStock) {
+  if (watchlistLoading) {
     return (
       <div className="w-full min-h-screen flex items-center justify-center bg-[#090a0c]">
         <div className="text-center space-y-3">
           <span className="w-3 h-3 rounded-full bg-[#3e63dd] animate-ping inline-block" />
           <p className="text-xs text-[#9ba1a6] font-bold">載入自選清單中...</p>
         </div>
+      </div>
+    );
+  }
+
+  // 使用者把清單刪光後的空狀態（刪光不會再被種回預設清單）
+  if (!selectedStock) {
+    return (
+      <div className="w-full min-h-screen flex items-center justify-center bg-[#090a0c] px-4">
+        <div className="bg-[#111315] border-2 border-[#22252a] rounded-2xl p-8 w-full max-w-sm text-center space-y-3">
+          <h1 className="text-lg font-black text-white">自選清單是空的</h1>
+          <p className="text-xs text-[#9ba1a6] font-bold">新增第一檔台股開始追蹤。</p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="mt-2 px-4 py-2 bg-[#3e63dd] hover:bg-[#3451b2] text-white text-xs font-black rounded-lg transition-all"
+          >
+            新增標的
+          </button>
+          <div>
+            <button onClick={() => signOut()} className="text-xs text-[#888d92] hover:text-white font-black">登出</button>
+          </div>
+        </div>
+        {addModal}
       </div>
     );
   }
@@ -1191,27 +1318,7 @@ export default function StockApp({ user }) {
         </footer>
       )}
 
-      {/* Add Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#111315] border-2 border-[#2d3035] w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl">
-            <div className="px-5 py-3 border-b-2 border-[#1f2125] flex justify-between items-center">
-              <h4 className="text-sm font-black text-white flex items-center gap-1.5"><Icon name="plus" className="w-4 h-4 text-[#3e63dd] stroke-[2.5]" /> 新增自選監控標的</h4>
-              <button onClick={() => setShowAddModal(false)} className="text-[#888d92] hover:text-white text-xs font-black">關閉</button>
-            </div>
-            <form onSubmit={handleAddStock} className="p-5 space-y-3">
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="例如: 2330, 2454, 長榮"
-                className="w-full bg-[#16181a] border-2 border-[#2d3137] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-[#6f737a] font-bold focus:outline-none focus:border-[#3e63dd]"
-                autoFocus />
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-2 bg-[#1a1c1e] text-slate-400 text-xs font-bold rounded-lg border-2 border-[#2a2d32]">取消</button>
-                <button type="submit" className="flex-1 py-2 bg-[#3e63dd] text-white text-xs font-bold rounded-lg hover:bg-[#3451b2]">確認新增</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {addModal}
     </div>
   );
 
