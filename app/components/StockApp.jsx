@@ -63,7 +63,7 @@ const formatFinMindId = (id) => {
 const fetchFinMindStockInfo = async (stockId) => {
   const cleanId = formatFinMindId(stockId);
   const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo&data_id=${cleanId}`;
-  const json = await safeFetchJson(url);
+  const json = await fetchFinMindJson(url);
   if (json.msg === 'success' && json.data && json.data.length > 0) {
     return {
       name: json.data[0].stock_name,
@@ -92,35 +92,15 @@ const getRecentDaysAgoDate = (days = 30) => {
 };
 
 /**
- * 封裝 Fetch，自動利用 AllOrigins CORS Proxy 以確保跨域取得資料
+ * 呼叫 FinMind API。FinMind 回應帶 Access-Control-Allow-Origin: *，瀏覽器可直接呼叫，不需經過第三方 CORS proxy。
+ * 10 秒逾時，避免 FinMind 沒回應時畫面一直轉圈。
  */
-const safeFetchJson = async (url) => {
-  try {
-    const res = await fetch(url);
-    const json = await res.json();
-    return json;
-  } catch (err) {
-    console.warn("直接 Fetch 發生 CORS 或連線錯誤，嘗試使用 AllOrigins Proxy...", err);
-    try {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const res = await fetch(proxyUrl);
-      const proxyJson = await res.json();
-      if (proxyJson && proxyJson.contents) {
-        return JSON.parse(proxyJson.contents);
-      }
-    } catch (err2) {
-      console.warn("AllOrigins Proxy 載入失敗，嘗試使用 CorsProxy.io...", err2);
-      try {
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl);
-        const json = await res.json();
-        return json;
-      } catch (err3) {
-        console.error("所有跨域方案皆失敗", err3);
-      }
-    }
+const fetchFinMindJson = async (url) => {
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) {
+    throw new Error(`FinMind 回應 HTTP ${res.status}`);
   }
-  throw new Error("無法跨域取得數據，請檢查網路連線或稍後再試。");
+  return res.json();
 };
 
 /**
@@ -130,7 +110,7 @@ const fetchFinMindDailyPrice = async (stockId) => {
   const cleanId = formatFinMindId(stockId);
   const startDate = getOneYearAgoDate();
   const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${cleanId}&start_date=${startDate}`;
-  const json = await safeFetchJson(url);
+  const json = await fetchFinMindJson(url);
   if (json.msg === 'success' && json.data && json.data.length > 0) {
     return json.data;
   }
@@ -144,7 +124,7 @@ const fetchFinMindInstitutionalInvestors = async (stockId) => {
   const cleanId = formatFinMindId(stockId);
   const startDate = getRecentDaysAgoDate(15);
   const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=${cleanId}&start_date=${startDate}`;
-  const json = await safeFetchJson(url);
+  const json = await fetchFinMindJson(url);
   if (json.msg === 'success' && json.data && json.data.length > 0) {
     return json.data;
   }
@@ -158,7 +138,7 @@ const fetchFinMindFinancialStatements = async (stockId) => {
   const cleanId = formatFinMindId(stockId);
   const startDate = getRecentDaysAgoDate(365);
   const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id=${cleanId}&start_date=${startDate}`;
-  const json = await safeFetchJson(url);
+  const json = await fetchFinMindJson(url);
   if (json.msg === 'success' && json.data && json.data.length > 0) {
     return json.data;
   }

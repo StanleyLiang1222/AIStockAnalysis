@@ -37,7 +37,8 @@ npx vercel env pull .env.local --environment=development
 ```sql
 CREATE TABLE IF NOT EXISTS allowed_users (
   email TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  seeded BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS watchlist (
@@ -47,6 +48,10 @@ CREATE TABLE IF NOT EXISTS watchlist (
   added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_email, stock_id)
 );
+
+-- 擋掉 Supabase REST API 的存取；應用程式以表擁有者 postgres 連線，不受影響
+ALTER TABLE allowed_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
 
 INSERT INTO allowed_users (email) VALUES
   ('stanleyliang1222@gmail.com'),
