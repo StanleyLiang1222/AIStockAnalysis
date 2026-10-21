@@ -57,83 +57,9 @@ const toListItem = (result) => (
 );
 
 /**
- * 生成 OHLCV K 線蠟燭棒數據（載入真實資料前的骨架佔位圖）
+ * 走勢圖各區間取最近幾根日 K（1D 不畫走勢，另外顯示當日單根 K 棒）
  */
-function generateCandleData(basePrice, count, labels) {
-  let price = basePrice;
-  return Array.from({ length: count }, (_, i) => {
-    const open = parseFloat(price.toFixed(1));
-    const change = (Math.random() - 0.47) * price * 0.025;
-    const close = parseFloat(Math.max(1, price + change).toFixed(1));
-    const high = parseFloat((Math.max(open, close) + Math.random() * price * 0.008).toFixed(1));
-    const low = parseFloat((Math.min(open, close) - Math.random() * price * 0.008).toFixed(1));
-    const volume = Math.floor(Math.random() * 30000) + 1000;
-    price = close;
-    return { time: labels[i] || String(i + 1), open, high, low, close, volume };
-  });
-}
-
-/**
- * 使用真實的開高低收數據，模擬生成今日的 26 筆分時走勢點 (符合起點/終點與高低區間)
- */
-function generateFittedIntradayPoints(candle) {
-  if (!candle) return [];
-  const { open, high, low, close, volume } = candle;
-  const count = 26;
-  const points = [];
-
-  let currentPrice = open;
-  const volPerPoint = Math.floor(volume / count);
-
-  const labels = Array.from({ length: count }, (_, i) => {
-    const totalMinutes = 9 * 60 + i * 10;
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return h + ':' + (m === 0 ? '00' : String(m));
-  });
-
-  for (let i = 0; i < count; i++) {
-    if (i === 0) {
-      currentPrice = open;
-    } else if (i === count - 1) {
-      currentPrice = close;
-    } else {
-      const remainingSteps = count - 1 - i;
-      const targetDiff = close - currentPrice;
-      const targetStep = targetDiff / (remainingSteps + 1);
-      const randomNoise = (Math.random() - 0.5) * (high - low) * 0.15;
-      currentPrice = currentPrice + targetStep + randomNoise;
-      currentPrice = Math.min(high, Math.max(low, currentPrice));
-    }
-
-    points.push({
-      time: labels[i],
-      open: parseFloat(open.toFixed(1)),
-      high: parseFloat(high.toFixed(1)),
-      low: parseFloat(low.toFixed(1)),
-      close: parseFloat(currentPrice.toFixed(1)),
-      volume: Math.floor(volPerPoint * (0.5 + Math.random()))
-    });
-  }
-
-  return points;
-}
-
-/**
- * 骨架佔位 K 線數據（真實資料尚未載入完成前顯示）
- * @type {Object}
- */
-const HISTORICAL_SAMPLES = {
-  '1D': generateCandleData(900, 26, Array.from({ length: 26 }, (_, i) => {
-    const h = 9 + Math.floor(i / 6);
-    const m = (i % 6) * 10;
-    return h + ':' + (m === 0 ? '00' : String(m));
-  })),
-  '5D': generateCandleData(880, 25, Array.from({ length: 25 }, (_, i) => 'D' + (Math.floor(i / 5) + 1) + '-' + ((i % 5) + 1))),
-  '1M': generateCandleData(860, 22, Array.from({ length: 22 }, (_, i) => (i + 1) + '日')),
-  '3M': generateCandleData(820, 30, Array.from({ length: 30 }, (_, i) => 'W' + (i + 1))),
-  '1Y': generateCandleData(750, 24, Array.from({ length: 24 }, (_, i) => (i + 1) + '月')),
-};
+const RANGE_DAYS = { '5D': 5, '1M': 22, '3M': 66, '1Y': 250 };
 
 /**
  * SVG 圖示渲染元件
@@ -341,80 +267,76 @@ const KLINE_TEMPLATES = [
   }
 ];
 
+const formatPrice = (value) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
 /**
  * 精美標記影線/實體的 SVG K 線圖示元件
+ * high / open / close / low 是 SVG 的 y 座標（數值越小越高）。
+ * 傳入 prices（真實價格）時，導引線的標籤會附上價格，圖示也會加寬容納文字。
  */
-function KlineDetailIcon({ type, high, open, close, low }) {
+function KlineDetailIcon({ type, high, open, close, low, prices }) {
   const upColor = '#ff453a';
   const downColor = '#30d158';
   const crossColor = '#a0a5ad';
 
-  const cx = 100;
+  const width = prices ? 300 : 200;
+  const cx = width / 2;
   const entityW = 22;
 
   let color = crossColor;
   if (type === 'up') color = upColor;
   if (type === 'down') color = downColor;
 
-  let leftTopText = '';
-  let leftTopY = 0;
-  let leftBottomText = '';
-  let leftBottomY = 0;
-
-  let rightTopText = '';
-  let rightTopY = 0;
-  let rightBottomText = '';
-  let rightBottomY = 0;
+  // 每個標籤：文字、對應的 y 座標、對應的價格欄位
+  let leftTop = null;
+  let leftBottom = null;
+  let rightTop = null;
+  let rightBottom = null;
 
   if (type === 'up') {
     const hasUpperShadow = high < close;
     const hasLowerShadow = low > open;
-
-    leftTopText = hasUpperShadow ? '收盤價' : '收盤/最高';
-    leftTopY = close;
-
-    leftBottomText = hasLowerShadow ? '開盤價' : '開盤/最低';
-    leftBottomY = open;
-
-    if (hasUpperShadow) {
-      rightTopText = '最高價';
-      rightTopY = high;
-    }
-    if (hasLowerShadow) {
-      rightBottomText = '最低價';
-      rightBottomY = low;
-    }
+    leftTop = { text: hasUpperShadow ? '收盤價' : '收盤/最高', y: close, key: 'close' };
+    leftBottom = { text: hasLowerShadow ? '開盤價' : '開盤/最低', y: open, key: 'open' };
+    if (hasUpperShadow) rightTop = { text: '最高價', y: high, key: 'high' };
+    if (hasLowerShadow) rightBottom = { text: '最低價', y: low, key: 'low' };
   } else if (type === 'down') {
     const hasUpperShadow = high < open;
     const hasLowerShadow = low > close;
-
-    leftTopText = hasUpperShadow ? '開盤價' : '開盤/最高';
-    leftTopY = open;
-
-    leftBottomText = hasLowerShadow ? '收盤價' : '收盤/最低';
-    leftBottomY = close;
-
-    if (hasUpperShadow) {
-      rightTopText = '最高價';
-      rightTopY = high;
-    }
-    if (hasLowerShadow) {
-      rightBottomText = '最低價';
-      rightBottomY = low;
-    }
+    leftTop = { text: hasUpperShadow ? '開盤價' : '開盤/最高', y: open, key: 'open' };
+    leftBottom = { text: hasLowerShadow ? '收盤價' : '收盤/最低', y: close, key: 'close' };
+    if (hasUpperShadow) rightTop = { text: '最高價', y: high, key: 'high' };
+    if (hasLowerShadow) rightBottom = { text: '最低價', y: low, key: 'low' };
   } else {
-    leftTopText = '開盤 = 收盤';
-    leftTopY = open;
-
-    rightTopText = '最高價';
-    rightTopY = high;
-
-    rightBottomText = '最低價';
-    rightBottomY = low;
+    leftTop = { text: '開盤 = 收盤', y: open, key: 'close' };
+    rightTop = { text: '最高價', y: high, key: 'high' };
+    rightBottom = { text: '最低價', y: low, key: 'low' };
   }
 
+  // 實體很短時開盤、收盤兩個標籤會疊在一起：文字至少錯開 12px，導引線仍指向真實位置
+  if (leftTop && leftBottom && leftBottom.y - leftTop.y < 12) {
+    const mid = (leftTop.y + leftBottom.y) / 2;
+    leftTop.textY = mid - 6;
+    leftBottom.textY = mid + 6;
+  }
+
+  const labelOf = (label) => (prices ? `${label.text} ${formatPrice(prices[label.key])}` : label.text);
+
+  const renderLeft = (label) => label && (
+    <g className="transition-all duration-300">
+      <line x1={cx - 14} y1={label.y} x2={cx - 36} y2={label.y} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
+      <text x={cx - 42} y={(label.textY ?? label.y) + 3.5} textAnchor="end" fill="#8e96a3" fontSize="9.5" className="svg-indicator-text">{labelOf(label)}</text>
+    </g>
+  );
+  const renderRight = (label) => label && (
+    <g className="transition-all duration-300">
+      <line x1={cx} y1={label.y} x2={cx + 36} y2={label.y} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
+      <text x={cx + 42} y={label.y + 3.5} textAnchor="start" fill="#8e96a3" fontSize="9.5" className="svg-indicator-text">{labelOf(label)}</text>
+    </g>
+  );
+
   return (
-    <svg width="200" height="150" viewBox="0 0 200 150" className="mx-auto overflow-visible select-none">
+    <svg width={width} height="150" viewBox={`0 0 ${width} 150`} className="mx-auto overflow-visible select-none">
       <line x1={cx} y1={high} x2={cx} y2={low} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
 
       {type === 'up' && (
@@ -427,32 +349,58 @@ function KlineDetailIcon({ type, high, open, close, low }) {
         <line x1={cx - 18} y1={open} x2={cx + 18} y2={open} stroke={color} strokeWidth="4" strokeLinecap="round" />
       )}
 
-      {leftTopText && (
-        <g className="transition-all duration-300">
-          <line x1={cx - 14} y1={leftTopY} x2={64} y2={leftTopY} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
-          <text x={58} y={leftTopY + 3.5} textAnchor="end" fill="#8e96a3" fontSize="9.5" className="svg-indicator-text">{leftTopText}</text>
-        </g>
-      )}
-      {leftBottomText && (
-        <g className="transition-all duration-300">
-          <line x1={cx - 14} y1={leftBottomY} x2={64} y2={leftBottomY} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
-          <text x={58} y={leftBottomY + 3.5} textAnchor="end" fill="#8e96a3" fontSize="9.5" className="svg-indicator-text">{leftBottomText}</text>
-        </g>
-      )}
-
-      {rightTopText && (
-        <g className="transition-all duration-300">
-          <line x1={cx} y1={rightTopY} x2={136} y2={rightTopY} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
-          <text x={142} y={rightTopY + 3.5} textAnchor="start" fill="#8e96a3" fontSize="9.5" className="svg-indicator-text">{rightTopText}</text>
-        </g>
-      )}
-      {rightBottomText && (
-        <g className="transition-all duration-300">
-          <line x1={cx} y1={rightBottomY} x2={136} y2={rightBottomY} stroke="#323842" strokeWidth="1" strokeDasharray="2,3" />
-          <text x={142} y={rightBottomY + 3.5} textAnchor="start" fill="#8e96a3" fontSize="9.5" className="svg-indicator-text">{rightBottomText}</text>
-        </g>
-      )}
+      {renderLeft(leftTop)}
+      {renderLeft(leftBottom)}
+      {renderRight(rightTop)}
+      {renderRight(rightBottom)}
     </svg>
+  );
+}
+
+/**
+ * 1D：當日單根 K 棒（真實開高低收，以導引線標註價格）＋漲跌、漲跌幅、成交量。
+ * 免費方案沒有盤中分 K，所以不畫盤中走勢。
+ */
+function DailyCandlePanel({ candle, prevClose, getTrendColors }) {
+  if (!candle) return null;
+  const { open, high, low, close, volume, time } = candle;
+
+  // 價格映射到 y 座標 15（最高）～ 135（最低）；一字線（高低相同）置中
+  const range = high - low;
+  const toY = (price) => (range > 0 ? 15 + ((high - price) / range) * 120 : 75);
+  const type = close > open ? 'up' : close < open ? 'down' : 'cross';
+
+  const change = prevClose != null ? close - prevClose : null;
+  const changePercent = change != null && prevClose > 0 ? (change / prevClose) * 100 : null;
+  const colors = getTrendColors(change ?? 0);
+  const sign = change > 0 ? '+' : '';
+
+  return (
+    <div className="flex flex-col items-center py-4">
+      <span className="text-xs text-[#9ba1a6] font-bold font-mono mb-3">{time}</span>
+      <KlineDetailIcon
+        type={type}
+        high={toY(high)}
+        open={toY(open)}
+        close={toY(close)}
+        low={toY(low)}
+        prices={{ open, high, low, close }}
+      />
+      <div className="grid grid-cols-3 gap-6 mt-4 text-center">
+        <div>
+          <div className="text-[10px] text-[#9ba1a6] font-bold">漲跌</div>
+          <div className={'text-sm font-mono ' + colors.text}>{change != null ? sign + formatPrice(change) : '—'}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-[#9ba1a6] font-bold">漲跌幅</div>
+          <div className={'text-sm font-mono ' + colors.text}>{changePercent != null ? sign + changePercent.toFixed(2) + '%' : '—'}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-[#9ba1a6] font-bold">成交量（張）</div>
+          <div className="text-sm font-mono font-black text-white">{volume.toLocaleString('en-US')}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -539,10 +487,8 @@ export default function StockApp({ user }) {
   const [watchlistError, setWatchlistError] = useState(null); // null | 'db' | 'quote'
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [timeRange, setTimeRange] = useState('1D');
+  const [timeRange, setTimeRange] = useState('1M'); // '1D' 顯示當日單根 K 棒，其餘為走勢圖
   const [chartType, setChartType] = useState('line'); // 'line' | 'candle'
-  const [aiAnalysis, setAiAnalysis] = useState({});
-  const [aiLoading, setAiLoading] = useState(false);
   const [widescreenTab, setWidescreenTab] = useState('dashboard'); // 'dashboard' | 'guide'
 
   const [realDataLoading, setRealDataLoading] = useState(false);
@@ -663,29 +609,14 @@ export default function StockApp({ user }) {
     };
   };
 
-  const currentCandles = useMemo(() => {
-    if (!selectedStock) return [];
-    const allCandles = realHistoricalCandles[selectedStock.id] || [];
-    if (allCandles.length === 0) {
-      return HISTORICAL_SAMPLES[timeRange] || [];
-    }
+  const allCandles = (selectedStock && realHistoricalCandles[selectedStock.id]) || [];
 
-    switch (timeRange) {
-      case '5D':
-        return allCandles.slice(-5);
-      case '1M':
-        return allCandles.slice(-22);
-      case '3M':
-        return allCandles.slice(-66);
-      case '1Y':
-        return allCandles.slice(-250);
-      case '1D':
-        const latestCandle = allCandles[allCandles.length - 1];
-        return generateFittedIntradayPoints(latestCandle);
-      default:
-        return allCandles;
-    }
-  }, [timeRange, selectedStock, realHistoricalCandles]);
+  const currentCandles = useMemo(
+    () => (RANGE_DAYS[timeRange] ? allCandles.slice(-RANGE_DAYS[timeRange]) : []),
+    [timeRange, allCandles]
+  );
+  const latestCandle = allCandles[allCandles.length - 1];
+  const prevCandle = allCandles[allCandles.length - 2];
 
   const handleAddStock = async (e) => {
     e.preventDefault();
@@ -777,16 +708,12 @@ export default function StockApp({ user }) {
     }
   };
 
-  const runAiStockEvaluation = (stock) => {
-    setAiLoading(true);
-    setTimeout(() => {
-      setAiAnalysis(prev => ({
-        ...prev,
-        [stock.id]: '### 🤖 Radix AI 盤後綜合評級報告\n\n**評級：中性偏多 (Accumulate)**\n\n- **籌碼動向分析**：昨日三大法人整體呈現淨買超，' + (stock.chips.foreign > 0 ? '外資主動買盤明顯' : '外資微幅調節避險') + '，同時內資投信於支撐帶展現強防守意圖，底部籌碼結構紮實。\n- **財務基本健檢**：當前營收年增率 (YoY) 為 ' + stock.yoy + '%，配合高達 ' + stock.roe + '% 的 ROE 表現，利潤分配能力極強，估值落在合理中線區間。\n- **技術操作策略**：根據 15 分鐘線型結構，價格守穩主要均線。建議中長線投資人可趁回檔時分批策略性佈局。'
-      }));
-      setAiLoading(false);
-    }, 1500);
-  };
+  // 財報類指標：ETF 等沒有財報的標的為 null，顯示「—」
+  const financialMetrics = [
+    { label: 'EPS', period: selectedStock?.epsPeriod, value: selectedStock?.eps, format: (v) => `${v} 元`, colored: false },
+    { label: 'YoY', period: selectedStock?.yoyPeriod, value: selectedStock?.yoy, format: (v) => `${v > 0 ? '+' : ''}${v}%`, colored: true },
+    { label: 'ROE', period: '近四季', value: selectedStock?.roe, format: (v) => `${v}%`, colored: false },
+  ];
 
   const addModal = showAddModal && (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -995,7 +922,7 @@ export default function StockApp({ user }) {
                       </div>
                       <div className="text-right flex items-center gap-3">
                         <div>
-                          <div className="text-sm font-mono font-extrabold text-white">{stock.price.toFixed(1)}</div>
+                          <div className="text-sm font-mono font-extrabold text-white">{formatPrice(stock.price)}</div>
                           <div className={'text-xs font-mono font-black ' + colors.text}>{stock.change >= 0 ? '+' : ''}{stock.changePercent}%</div>
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); handleRemoveStock(stock.id); }} className="p-1 text-slate-500 hover:text-[#ff453a] transition-all">
@@ -1027,24 +954,26 @@ export default function StockApp({ user }) {
                   </h2>
                 </div>
                 <div className="text-right">
-                  <div className="text-xl font-mono font-black text-white">{selectedStock.price.toFixed(1)}</div>
+                  <div className="text-xl font-mono font-black text-white">{formatPrice(selectedStock.price)}</div>
                   <span className={'text-xs font-black ' + getTrendColors(selectedStock.change).text}>
-                    {selectedStock.change >= 0 ? '+' : ''}{selectedStock.change.toFixed(1)} ({selectedStock.changePercent}%)
+                    {selectedStock.change >= 0 ? '+' : ''}{formatPrice(selectedStock.change)} ({selectedStock.changePercent}%)
                   </span>
                   <div className="text-[10px] text-[#9ba1a6] font-bold font-mono mt-0.5">資料日期 {selectedStock.dataDate}</div>
                 </div>
               </div>
 
-              {/* 走勢圖區域（折線 / K線 可切換） */}
+              {/* 走勢圖區域（折線 / K線 可切換；1D 顯示當日單根 K 棒） */}
               <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-4 shadow-md flex-shrink-0 flex flex-col">
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                   <span className="text-sm font-black text-white flex items-center gap-1.5">
                     <Icon name="activity" className="w-5 h-5 text-[#3e63dd]" />
-                    {chartType === 'line' ? '分時走勢圖' : 'K線走勢圖'}
-                    <span className="text-xs text-[#9ba1a6] font-normal ml-1">(含格線・Tooltip{chartType === 'candle' ? '・成交量' : ''})</span>
+                    {timeRange === '1D' ? '當日行情' : chartType === 'line' ? '走勢圖' : 'K線走勢圖'}
+                    {timeRange !== '1D' && (
+                      <span className="text-xs text-[#9ba1a6] font-normal ml-1">(含格線・Tooltip{chartType === 'candle' ? '・成交量' : ''})</span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2">
-                    <div className="flex bg-[#0d0f12] p-1 rounded-lg border-2 border-[#2a2e36] text-xs">
+                    <div className={'flex bg-[#0d0f12] p-1 rounded-lg border-2 border-[#2a2e36] text-xs' + (timeRange === '1D' ? ' invisible' : '')}>
                       <button
                         onClick={() => setChartType('line')}
                         className={'px-3 py-1 rounded-md font-black transition-all flex items-center gap-1 ' + (chartType === 'line' ? 'bg-[#22252a] text-[#3e63dd] border border-[#3e63dd]/30 shadow' : 'text-[#888d92] hover:text-white')}
@@ -1066,7 +995,9 @@ export default function StockApp({ user }) {
                   </div>
                 </div>
 
-                {chartType === 'line' ? (
+                {timeRange === '1D' ? (
+                  <DailyCandlePanel candle={latestCandle} prevClose={prevCandle?.close} getTrendColors={getTrendColors} />
+                ) : chartType === 'line' ? (
                   <WidescreenLineChart
                     trendColors={getTrendColors(selectedStock.change)}
                     candles={currentCandles}
@@ -1087,22 +1018,25 @@ export default function StockApp({ user }) {
                 </div>
                 <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3 flex flex-col justify-between shadow-md" style={{ minHeight: '160px' }}>
                   <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="pieChart" className="w-4 h-4 text-[#30d158] font-black" /> 財務季度診斷</span>
-                  <div className="flex items-center justify-between gap-1 mt-1">
-                    <div className="text-[10px] space-y-0.5 text-slate-300 font-bold leading-tight">
-                      <div>EPS: <span className="text-white font-mono">{selectedStock.eps}元</span></div>
-                      <div>YoY: <span className={getTrendColors(selectedStock.yoy).text}>{selectedStock.yoy}%</span></div>
-                      <div>ROE: <span className="text-white font-mono">{selectedStock.roe}%</span></div>
-                    </div>
-                    <div className="flex-shrink-0"><FinancialRadar /></div>
+                  <div className="grid grid-cols-3 gap-2 flex-1 items-center mt-1">
+                    {financialMetrics.map(m => (
+                      <div key={m.label} className="text-center">
+                        <div className="text-[10px] text-slate-300 font-bold">{m.label}</div>
+                        <div className={'text-lg font-mono font-black mt-0.5 ' + (m.value != null && m.colored ? getTrendColors(m.value).text : 'text-white')}>
+                          {m.value != null ? m.format(m.value) : '—'}
+                        </div>
+                        <div className="text-[10px] text-[#9ba1a6] font-bold font-mono mt-0.5">{m.value != null && m.period ? m.period : ' '}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3 flex flex-col justify-between shadow-md" style={{ minHeight: '160px' }}>
                   <div className="flex justify-between items-center">
                     <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="sparkles" className="w-4 h-4 text-[#3e63dd]" /> AI 多空健檢</span>
-                    <button onClick={() => runAiStockEvaluation(selectedStock)} disabled={aiLoading} className="px-2 py-0.5 bg-[#3e63dd] hover:bg-[#3451b2] text-white rounded text-[10px] font-black transition-all">{aiLoading ? '...' : '分析'}</button>
+                    <button disabled className="px-2 py-0.5 bg-[#1a1c1e] text-[#888d92] border border-[#2d3034] rounded text-[10px] font-black cursor-not-allowed">尚未開放</button>
                   </div>
-                  <div className="bg-[#15171a] border-2 border-[#1e2023] rounded-lg p-2 h-24 overflow-y-auto text-[10px] leading-relaxed text-slate-200 font-bold whitespace-pre-line scrollbar-thin mt-1">
-                    {aiAnalysis[selectedStock.id] ? aiAnalysis[selectedStock.id] : '點擊「分析」產出大數據投顧診斷。'}
+                  <div className="bg-[#15171a] border-2 border-[#1e2023] rounded-lg p-2 h-24 flex items-center justify-center text-[10px] leading-relaxed text-[#9ba1a6] font-bold mt-1">
+                    AI 分析功能規劃中
                   </div>
                 </div>
               </div>
@@ -1157,7 +1091,7 @@ export default function StockApp({ user }) {
                     <span className="text-xs text-slate-400 font-bold">{stock.category}</span>
                   </div>
                   <div className="text-right flex items-center gap-4">
-                    <span className="text-sm font-mono font-bold text-white">{stock.price.toFixed(1)}</span>
+                    <span className="text-sm font-mono font-bold text-white">{formatPrice(stock.price)}</span>
                     <span className={'w-16 py-1 rounded-lg text-center text-xs font-extrabold text-white ' + colors.solidBg}>{stock.change >= 0 ? '+' : ''}{stock.changePercent}%</span>
                   </div>
                 </div>
@@ -1173,7 +1107,8 @@ export default function StockApp({ user }) {
               <h3 className="text-sm font-black text-white mt-0.5">{selectedStock.name} ({selectedStock.id})</h3>
               <div className="text-[10px] text-[#9ba1a6] font-bold font-mono mt-0.5">資料日期 {selectedStock.dataDate}</div>
               <div className="mt-2 pt-2 border-t border-[#1f2125]">
-                <SimpleLineChart trendColors={getTrendColors(selectedStock.change)} points={currentCandles} />
+                {/* 手機版沒有區間切換，固定顯示 1M 走勢 */}
+                <SimpleLineChart trendColors={getTrendColors(selectedStock.change)} points={allCandles.slice(-RANGE_DAYS['1M'])} />
               </div>
             </div>
             <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3">
@@ -1188,12 +1123,12 @@ export default function StockApp({ user }) {
             <div className="bg-gradient-to-b from-[#1c243d] to-[#111315] border-2 border-[#2b355a] rounded-xl p-4 text-center space-y-2">
               <Icon name="sparkles" className="w-6 h-6 text-[#6e8eff] mx-auto" />
               <h3 className="text-xs font-black text-white">AI 籌碼多空分析師</h3>
-              <button onClick={() => runAiStockEvaluation(selectedStock)} disabled={aiLoading} className="w-full py-2 bg-[#3e63dd] text-white text-xs font-bold rounded-lg shadow-md">
-                {aiLoading ? '大數據分析中...' : '產生 ' + selectedStock.name + ' 報告'}
+              <button disabled className="w-full py-2 bg-[#1a1c1e] text-[#888d92] border-2 border-[#2d3034] text-xs font-bold rounded-lg cursor-not-allowed">
+                尚未開放
               </button>
             </div>
-            <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3 text-xs leading-relaxed text-slate-200 font-bold whitespace-pre-line min-h-[140px]">
-              {aiAnalysis[selectedStock.id] ? aiAnalysis[selectedStock.id] : '尚未產生報告，請點擊上方按鈕獲取智能解讀。'}
+            <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3 text-xs leading-relaxed text-[#9ba1a6] font-bold min-h-[140px] flex items-center justify-center">
+              AI 分析功能規劃中
             </div>
           </div>
         );
@@ -1311,7 +1246,7 @@ function WidescreenLineChart({ trendColors, candles = [] }) {
             <text x={PAD_L - 5} y={g.y + 4}
               textAnchor="end" fill="#4e5868" fontSize="10.5"
               fontFamily="'Courier New', monospace">
-              {g.price.toFixed(1)}
+              {formatPrice(g.price)}
             </text>
           </g>
         ))}
@@ -1347,7 +1282,7 @@ function WidescreenLineChart({ trendColors, candles = [] }) {
         {tooltip && (() => {
           const c = tooltip.candle;
           const isUp = c.close >= c.open;
-          const diff = (c.close - c.open).toFixed(1);
+          const diff = formatPrice(c.close - c.open);
           const diffPct = (((c.close - c.open) / c.open) * 100).toFixed(2);
           const TW = 148; const TH = 78;
           let tx = tooltip.x + 16;
@@ -1362,7 +1297,7 @@ function WidescreenLineChart({ trendColors, candles = [] }) {
               <text x={tx + 10} y={ty + 18} fill="#7a8898" fontSize="10" fontFamily="sans-serif">時間</text>
               <text x={tx + TW - 10} y={ty + 18} textAnchor="end" fill="white" fontSize="10" fontWeight="bold" fontFamily="'Courier New', monospace">{c.time}</text>
               <text x={tx + 10} y={ty + 36} fill="#7a8898" fontSize="10" fontFamily="sans-serif">收盤</text>
-              <text x={tx + TW - 10} y={ty + 36} textAnchor="end" fill={color} fontSize="11" fontWeight="bold" fontFamily="'Courier New', monospace">{c.close.toFixed(1)}</text>
+              <text x={tx + TW - 10} y={ty + 36} textAnchor="end" fill={color} fontSize="11" fontWeight="bold" fontFamily="'Courier New', monospace">{formatPrice(c.close)}</text>
               <text x={tx + 10} y={ty + 54} fill="#7a8898" fontSize="10" fontFamily="sans-serif">漲跌</text>
               <text x={tx + TW - 10} y={ty + 54} textAnchor="end" fill={color} fontSize="10.5" fontWeight="bold" fontFamily="'Courier New', monospace">
                 {isUp ? '+' : ''}{diff} ({isUp ? '+' : ''}{diffPct}%)
@@ -1496,7 +1431,7 @@ function CandlestickChart({ trendColors, candles = [] }) {
                 strokeDasharray={i === 0 || i === GRID_COUNT - 1 ? '' : '3,5'} />
               <text x={PAD_L - 5} y={g.y + 4} textAnchor="end"
                 fill="#505a68" fontSize="10.5" fontFamily="'Courier New', monospace">
-                {g.price.toFixed(1)}
+                {formatPrice(g.price)}
               </text>
             </g>
           ))}
@@ -1566,10 +1501,10 @@ function CandlestickChart({ trendColors, candles = [] }) {
             if (tx + TW > W - PAD_R) tx = tooltip.x - TW - 12;
             if (ty + TH > H_CANDLE) ty = H_CANDLE - TH - 4;
             const rows = [
-              { label: '開盤', val: c.open.toFixed(1) },
-              { label: '最高', val: c.high.toFixed(1) },
-              { label: '最低', val: c.low.toFixed(1) },
-              { label: '收盤', val: c.close.toFixed(1) },
+              { label: '開盤', val: formatPrice(c.open) },
+              { label: '最高', val: formatPrice(c.high) },
+              { label: '最低', val: formatPrice(c.low) },
+              { label: '收盤', val: formatPrice(c.close) },
               { label: '成交量', val: (c.volume / 1000).toFixed(1) + 'K' },
             ];
             return (
@@ -1624,17 +1559,17 @@ function PriceVolumeTable({ candles }) {
             {[...candles].reverse().map((c, i) => {
               const isUp = c.close >= c.open;
               const color = isUp ? upColor : downColor;
-              const diff = (c.close - c.open).toFixed(1);
+              const diff = formatPrice(c.close - c.open);
               const diffPct = (((c.close - c.open) / c.open) * 100).toFixed(2);
               return (
                 <tr key={i} style={{ borderBottom: '1px solid #141720', cursor: 'default' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#141720'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td className="py-2 px-3 font-mono whitespace-nowrap" style={{ color: '#5a6680' }}>{c.time}</td>
-                  <td className="py-2 px-3 font-mono" style={{ color: '#b0bac8' }}>{c.open.toFixed(1)}</td>
-                  <td className="py-2 px-3 font-mono font-bold" style={{ color: upColor }}>{c.high.toFixed(1)}</td>
-                  <td className="py-2 px-3 font-mono font-bold" style={{ color: downColor }}>{c.low.toFixed(1)}</td>
-                  <td className="py-2 px-3 font-mono font-black" style={{ color }}>{c.close.toFixed(1)}</td>
+                  <td className="py-2 px-3 font-mono" style={{ color: '#b0bac8' }}>{formatPrice(c.open)}</td>
+                  <td className="py-2 px-3 font-mono font-bold" style={{ color: upColor }}>{formatPrice(c.high)}</td>
+                  <td className="py-2 px-3 font-mono font-bold" style={{ color: downColor }}>{formatPrice(c.low)}</td>
+                  <td className="py-2 px-3 font-mono font-black" style={{ color }}>{formatPrice(c.close)}</td>
                   <td className="py-2 px-3 font-mono font-black whitespace-nowrap" style={{ color }}>
                     {isUp ? '+' : ''}{diff} ({isUp ? '+' : ''}{diffPct}%)
                   </td>
@@ -1713,23 +1648,5 @@ function ChipsBarChart({ chips, getTrendColors }) {
         );
       })}
     </div>
-  );
-}
-
-/* =====================================================
-   FinancialRadar - 財務雷達圖
-   ===================================================== */
-function FinancialRadar() {
-  const cx = 35; const cy = 35; const r = 24;
-  const angles = [-Math.PI / 2, -Math.PI / 2 + (2 * Math.PI) / 5, -Math.PI / 2 + (4 * Math.PI) / 5, -Math.PI / 2 + (6 * Math.PI) / 5, -Math.PI / 2 + (8 * Math.PI) / 5];
-  const scores = [0.85, 0.7, 0.9, 0.65, 0.8];
-  const scorePath = angles.map((a, i) => (i === 0 ? 'M' : 'L') + ' ' + (cx + r * scores[i] * Math.cos(a)) + ' ' + (cy + r * scores[i] * Math.sin(a))).join(' ') + ' Z';
-  const ringPath = (s) => angles.map((a, i) => (i === 0 ? 'M' : 'L') + ' ' + (cx + r * s * Math.cos(a)) + ' ' + (cy + r * s * Math.sin(a))).join(' ') + ' Z';
-  return (
-    <svg viewBox="0 0 70 70" className="w-20 h-20 overflow-visible">
-      <path d={ringPath(1)} fill="none" stroke="#2c2e32" strokeWidth="1.2" />
-      <path d={ringPath(0.6)} fill="none" stroke="#2c2e32" strokeWidth="0.8" strokeDasharray="1.5,1.5" />
-      <path d={scorePath} fill="#3e63dd" fillOpacity="0.35" stroke="#3e63dd" strokeWidth="2.0" />
-    </svg>
   );
 }
