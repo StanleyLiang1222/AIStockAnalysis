@@ -8,37 +8,27 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0c0d0e;
+  background: theme('colors.canvas');
 }
 ::-webkit-scrollbar-thumb {
-  background: #22252a;
+  background: theme('colors.line.DEFAULT');
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3e63dd;
+  background: theme('colors.accent.DEFAULT');
 }
-/* Simple pulse animations */
-@keyframes pulse-ring {
-  0% { transform: scale(0.95); opacity: 0.5; }
-  50% { transform: scale(1.1); opacity: 0.8; }
-  100% { transform: scale(0.95); opacity: 0.5; }
-}
-.custom-pulse {
-  animation: pulse-ring 2s infinite ease-in-out;
-}
-
 /* Glassmorphism details cards and interactive glow for K-line guide */
 .glass-k-card {
-  background: rgba(18, 20, 24, 0.65);
+  background: theme('colors.surface.DEFAULT / 65%');
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 2px solid rgba(45, 50, 60, 0.4);
+  border: 2px solid theme('colors.line.strong / 40%');
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .glass-k-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(62, 99, 221, 0.5);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(62, 99, 221, 0.15);
+  border-color: theme('colors.accent.DEFAULT / 50%');
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px theme('colors.accent.DEFAULT / 15%');
 }
 
 /* Subtext indicators inside SVG */

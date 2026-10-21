@@ -7,7 +7,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="zh-TW">
-      <body className="bg-[#0c0d0e] text-[#eeeeef] antialiased">{children}</body>
+      <body className="bg-canvas text-fg antialiased">{children}</body>
     </html>
   );
 }
