@@ -1,18 +1,10 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getOrSeedWatchlist, addToWatchlist, removeFromWatchlist, getWatchlist } from '@/lib/db';
+import { parseStockId } from '@/lib/stock-id';
 
 // 新使用者第一次載入時種入的預設自選股
 const DEFAULT_WATCHLIST_IDS = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2881.TW'];
-
-// 台股代碼：4–6 位數字，可帶一個英文字尾（如特別股 2881A、債券 ETF 00679B）
-const STOCK_ID_PATTERN = /^\d{4,6}[A-Z]?\.TW$/;
-
-function parseStockId(value) {
-  if (typeof value !== 'string') return null;
-  const stockId = value.trim().toUpperCase();
-  return STOCK_ID_PATTERN.test(stockId) ? stockId : null;
-}
 
 async function withUser(handler) {
   const session = await auth();

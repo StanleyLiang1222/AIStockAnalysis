@@ -2,32 +2,31 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { signOut } from 'next-auth/react';
+import { STOCK_ID_PATTERN, normalizeStockId } from '@/lib/stock-id';
 
-/**
- * 台股代碼格式（與 /api/watchlist 伺服器端驗證一致）
- */
-const STOCK_ID_PATTERN = /^\d{4,6}[A-Z]?\.TW$/;
-
-/**
- * 使用者輸入（2330 / 2330.tw）統一轉成 2330.TW
- */
-const normalizeStockId = (raw) => {
-  const id = raw.trim().toUpperCase();
-  if (!id) return '';
-  return id.endsWith('.TW') ? id : id + '.TW';
-};
-
-class WatchlistApiError extends Error {
+class ApiError extends Error {
   constructor(status) {
-    super(`watchlist API 回應 ${status}`);
+    super(`API 回應 ${status}`);
     this.status = status;
   }
 }
 
 /**
- * 呼叫 /api/watchlist。401（session 過期）直接導回登入頁；其他失敗一律丟出 WatchlistApiError，
+ * 呼叫自家 API。401（session 過期）直接導回登入頁；其他失敗一律丟出 ApiError，
  * 網路層錯誤則是 fetch 本身丟出的 TypeError。
  */
+async function requestJson(url, init) {
+  const res = await fetch(url, init);
+  if (res.status === 401) {
+    window.location.href = '/login';
+    throw new ApiError(401);
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status);
+  }
+  return res.json();
+}
+
 async function callWatchlistApi(method, stockId) {
   const init = { method };
   let url = '/api/watchlist';
@@ -37,113 +36,25 @@ async function callWatchlistApi(method, stockId) {
   } else if (method === 'DELETE') {
     url += `?stockId=${encodeURIComponent(stockId)}`;
   }
-
-  const res = await fetch(url, init);
-  if (res.status === 401) {
-    window.location.href = '/login';
-    throw new WatchlistApiError(401);
-  }
-  if (!res.ok) {
-    throw new WatchlistApiError(res.status);
-  }
-  const { watchlist } = await res.json();
+  const { watchlist } = await requestJson(url, init);
   return watchlist;
 }
 
 /**
- * 將個股 ID (e.g. 2330.TW 或 2330) 轉換為 FinMind 格式 (e.g. 2330)
+ * 從伺服器取得多檔股票資料（伺服器端呼叫 FinMind 並快取，前端不直接呼叫 FinMind）。
+ * 回傳與 ids 同順序的陣列：{ id, ok: true, stock, candles, dataDate } 或 { id, ok: false, error }
  */
-const formatFinMindId = (id) => {
-  return id.replace('.TW', '').trim();
-};
+async function fetchStocks(ids) {
+  const { results } = await requestJson(`/api/stocks?ids=${ids.map(encodeURIComponent).join(',')}`);
+  return results;
+}
 
 /**
- * 從 FinMind API 獲取個股基本資訊 (名稱與產業分類)
+ * 伺服器回傳的結果轉成清單項目：抓不到資料的股票以佔位項目保留在清單中
  */
-const fetchFinMindStockInfo = async (stockId) => {
-  const cleanId = formatFinMindId(stockId);
-  const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInfo&data_id=${cleanId}`;
-  const json = await fetchFinMindJson(url);
-  if (json.msg === 'success' && json.data && json.data.length > 0) {
-    return {
-      name: json.data[0].stock_name,
-      category: json.data[0].industry_category || '台股'
-    };
-  }
-  throw new Error('無法取得股票基本資訊');
-};
-
-/**
- * 取得一年前的 ISO 日期格式 (YYYY-MM-DD)
- */
-const getOneYearAgoDate = () => {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() - 1);
-  return d.toISOString().split('T')[0];
-};
-
-/**
- * 取得最近 N 天的 ISO 日期格式 (YYYY-MM-DD)
- */
-const getRecentDaysAgoDate = (days = 30) => {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().split('T')[0];
-};
-
-/**
- * 呼叫 FinMind API。FinMind 回應帶 Access-Control-Allow-Origin: *，瀏覽器可直接呼叫，不需經過第三方 CORS proxy。
- * 10 秒逾時，避免 FinMind 沒回應時畫面一直轉圈。
- */
-const fetchFinMindJson = async (url) => {
-  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-  if (!res.ok) {
-    throw new Error(`FinMind 回應 HTTP ${res.status}`);
-  }
-  return res.json();
-};
-
-/**
- * 從 FinMind API 獲取個股日 K 線歷史資料
- */
-const fetchFinMindDailyPrice = async (stockId) => {
-  const cleanId = formatFinMindId(stockId);
-  const startDate = getOneYearAgoDate();
-  const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${cleanId}&start_date=${startDate}`;
-  const json = await fetchFinMindJson(url);
-  if (json.msg === 'success' && json.data && json.data.length > 0) {
-    return json.data;
-  }
-  throw new Error('無法取得日K資料');
-};
-
-/**
- * 從 FinMind API 獲取個股三大法人買賣超
- */
-const fetchFinMindInstitutionalInvestors = async (stockId) => {
-  const cleanId = formatFinMindId(stockId);
-  const startDate = getRecentDaysAgoDate(15);
-  const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=${cleanId}&start_date=${startDate}`;
-  const json = await fetchFinMindJson(url);
-  if (json.msg === 'success' && json.data && json.data.length > 0) {
-    return json.data;
-  }
-  throw new Error('無法取得籌碼資料');
-};
-
-/**
- * 從 FinMind API 獲取個股財報 (EPS)
- */
-const fetchFinMindFinancialStatements = async (stockId) => {
-  const cleanId = formatFinMindId(stockId);
-  const startDate = getRecentDaysAgoDate(365);
-  const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id=${cleanId}&start_date=${startDate}`;
-  const json = await fetchFinMindJson(url);
-  if (json.msg === 'success' && json.data && json.data.length > 0) {
-    return json.data;
-  }
-  throw new Error('無法取得財務資料');
-};
+const toListItem = (result) => (
+  result.ok ? { ...result.stock, dataDate: result.dataDate } : { id: result.id, unavailable: true }
+);
 
 /**
  * 生成 OHLCV K 線蠟燭棒數據（載入真實資料前的骨架佔位圖）
@@ -637,88 +548,16 @@ export default function StockApp({ user }) {
   const [realDataLoading, setRealDataLoading] = useState(false);
   const [realHistoricalCandles, setRealHistoricalCandles] = useState({}); // { [stockId]: [candles] }
 
-  /**
-   * 依代碼向 FinMind 抓取完整個股資料（報價、籌碼、財報、名稱）與歷史 K 線
-   */
-  const fetchFullStockData = useCallback(async (rawId) => {
-    const cleanId = rawId.includes('.TW') ? rawId : rawId + '.TW';
-    const pureId = formatFinMindId(cleanId);
+  // 只保留拿到資料的股票 K 線
+  const mergeCandles = (results) => {
+    setRealHistoricalCandles(prev => {
+      const next = { ...prev };
+      results.forEach(r => { if (r.ok) next[r.id] = r.candles; });
+      return next;
+    });
+  };
 
-    const data = await fetchFinMindDailyPrice(pureId);
-    if (!data || data.length === 0) {
-      throw new Error('查無此台股代碼');
-    }
-
-    const latest = data[data.length - 1];
-    const prev = data.length > 1 ? data[data.length - 2] : latest;
-    const closePrice = latest.close;
-    const changeAmount = parseFloat((closePrice - prev.close).toFixed(1));
-    const changePercent = prev.close > 0 ? parseFloat(((changeAmount / prev.close) * 100).toFixed(2)) : 0;
-    const volumeK = Math.round(latest.Trading_Volume / 1000).toLocaleString();
-
-    let chips = { foreign: 0, trust: 0, dealer: 0 };
-    try {
-      const chipsData = await fetchFinMindInstitutionalInvestors(pureId);
-      if (chipsData && chipsData.length > 0) {
-        const latestDate = chipsData[chipsData.length - 1].date;
-        const latestChips = chipsData.filter(c => c.date === latestDate);
-        let foreign = 0; let trust = 0; let dealer = 0;
-        latestChips.forEach(item => {
-          const diffZhang = Math.round((item.buy - item.sell) / 1000);
-          if (item.name === 'Foreign_Investor') foreign = diffZhang;
-          if (item.name === 'Investment_Trust') trust = diffZhang;
-          if (item.name === 'Dealer_self' || item.name === 'Dealer_Hedging') dealer += diffZhang;
-        });
-        chips = { foreign, trust, dealer };
-      }
-    } catch (err) { console.warn("無法取得籌碼數據", err); }
-
-    let eps = 0;
-    try {
-      const finData = await fetchFinMindFinancialStatements(pureId);
-      if (finData && finData.length > 0) {
-        const epsItems = finData.filter(f => f.type === 'EPS');
-        if (epsItems.length > 0) eps = epsItems[epsItems.length - 1].value;
-      }
-    } catch (err) { console.warn("無法取得財報數據", err); }
-
-    let name = '台股 ' + pureId;
-    let category = '自選股';
-    try {
-      const info = await fetchFinMindStockInfo(pureId);
-      name = info.name;
-      category = info.category;
-    } catch (err) {
-      console.warn("無法取得基本資訊", err);
-    }
-
-    const stock = {
-      id: cleanId,
-      name,
-      price: closePrice,
-      change: changeAmount,
-      changePercent,
-      volume: volumeK,
-      category,
-      eps,
-      yoy: 15.0,
-      roe: 12.0,
-      chips
-    };
-
-    const candles = data.map(item => ({
-      time: item.date,
-      open: item.open,
-      high: item.max,
-      low: item.min,
-      close: item.close,
-      volume: Math.round(item.Trading_Volume / 1000)
-    }));
-
-    return { stock, candles };
-  }, []);
-
-  // 首次載入：從資料庫讀取使用者的自選股清單（新使用者的預設清單由伺服器端種入）
+  // 首次載入：從資料庫讀取使用者的自選股清單（新使用者的預設清單由伺服器端種入），再向伺服器取得股價
   const loadWatchlist = useCallback(async () => {
     setWatchlistLoading(true);
     setWatchlistError(null);
@@ -734,102 +573,64 @@ export default function StockApp({ user }) {
       return;
     }
 
-    const results = await Promise.all(ids.map(async (id) => {
+    let results = [];
+    if (ids.length > 0) {
       try {
-        return await fetchFullStockData(id);
+        results = await fetchStocks(ids);
       } catch (err) {
-        console.error(`載入 ${id} 失敗`, err);
-        return null;
+        if (err.status === 401) return;
+        console.error('載入股價失敗', err);
+        // 503：伺服器讀不到快取表，代表資料庫連不上
+        setWatchlistError(err.status === 503 ? 'db' : 'quote');
+        setWatchlistLoading(false);
+        return;
       }
-    }));
+    }
 
-    const valid = results.filter(Boolean);
     // 清單裡有股票但一檔都抓不到：是 FinMind 的問題，不是清單真的空了
-    if (ids.length > 0 && valid.length === 0) {
+    if (results.length > 0 && results.every(r => !r.ok)) {
       setWatchlistError('quote');
       setWatchlistLoading(false);
       return;
     }
 
-    setStocks(valid.map(r => r.stock));
-    setWatchlist(valid.map(r => r.stock.id));
-    setRealHistoricalCandles(prev => {
-      const next = { ...prev };
-      valid.forEach(r => { next[r.stock.id] = r.candles; });
-      return next;
-    });
-    setSelectedStock(valid[0]?.stock ?? null);
+    const items = results.map(toListItem);
+    setStocks(items);
+    setWatchlist(items.map(s => s.id));
+    mergeCandles(results);
+    setSelectedStock(items.find(s => !s.unavailable) ?? null);
     setWatchlistLoading(false);
-  }, [fetchFullStockData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     loadWatchlist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 更新自選清單內所有個股的今日最新真實行情（手動刷新按鈕）
+  // 「更新數據」：向伺服器讀取最新快取，不直接呼叫 FinMind
   const loadRealStockPrices = useCallback(async () => {
+    if (watchlist.length === 0) return;
     setRealDataLoading(true);
     try {
-      const results = await Promise.all(
-        stocks.map(async (stock) => {
-          try {
-            return await fetchFullStockData(stock.id);
-          } catch (error) {
-            console.error(`載入真實股價失敗: ${stock.id}`, error);
-            return { stock, candles: null };
-          }
-        })
-      );
-
-      const updatedStocks = results.map(r => r.stock);
-      setStocks(updatedStocks);
-      setRealHistoricalCandles(prev => {
-        const next = { ...prev };
-        results.forEach(r => { if (r.candles) next[r.stock.id] = r.candles; });
-        return next;
+      const results = await fetchStocks(watchlist);
+      // 這次抓不到、但畫面上已有資料的股票，保留原本的資料
+      setStocks(prev => results.map(r => (r.ok ? toListItem(r) : prev.find(s => s.id === r.id) ?? toListItem(r))));
+      mergeCandles(results);
+      setSelectedStock(prev => {
+        const updated = prev && results.find(r => r.ok && r.id === prev.id);
+        return updated ? toListItem(updated) : prev;
       });
-      const currentSelected = selectedStock && updatedStocks.find(s => s.id === selectedStock.id);
-      if (currentSelected) {
-        setSelectedStock(currentSelected);
+    } catch (err) {
+      if (err.status !== 401) {
+        console.error('更新股價失敗', err);
+        alert(err.status === 503 ? '更新失敗，請確認 Supabase 是否有啟動。' : '更新失敗，請稍後再試。');
       }
-    } catch (e) {
-      console.error("載入真實台股資料出錯", e);
     } finally {
       setRealDataLoading(false);
     }
-  }, [stocks, selectedStock, fetchFullStockData]);
-
-  // 載入特定股票的歷史日 K 線（切換選中股票時，若尚未快取）
-  const loadHistoricalCandles = useCallback(async (stockId) => {
-    if (realHistoricalCandles[stockId]) return;
-    try {
-      const data = await fetchFinMindDailyPrice(stockId);
-      if (data && data.length > 0) {
-        const converted = data.map(item => ({
-          time: item.date,
-          open: item.open,
-          high: item.max,
-          low: item.min,
-          close: item.close,
-          volume: Math.round(item.Trading_Volume / 1000)
-        }));
-        setRealHistoricalCandles(prev => ({
-          ...prev,
-          [stockId]: converted
-        }));
-      }
-    } catch (e) {
-      console.error(`載入 ${stockId} 歷史 K 線失敗`, e);
-    }
-  }, [realHistoricalCandles]);
-
-  useEffect(() => {
-    if (selectedStock) {
-      loadHistoricalCandles(selectedStock.id);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStock?.id]);
+  }, [watchlist]);
 
   // 同步手機預覽版分頁與寬螢幕主分頁，防止裝置模式切換時視圖錯亂
   useEffect(() => {
@@ -898,7 +699,7 @@ export default function StockApp({ user }) {
 
     if (watchlist.includes(stockId)) {
       const existing = stocks.find(s => s.id === stockId);
-      if (existing) setSelectedStock(existing);
+      if (existing && !existing.unavailable) setSelectedStock(existing);
       setSearchQuery('');
       setShowAddModal(false);
       alert('此標的已在自選清單中。');
@@ -907,12 +708,19 @@ export default function StockApp({ user }) {
 
     setRealDataLoading(true);
     try {
-      let fetched;
+      let result;
       try {
-        fetched = await fetchFullStockData(stockId);
+        [result] = await fetchStocks([stockId]);
       } catch (error) {
-        console.error("驗證新增個股失敗", error);
-        alert('載入此台股數據失敗，請確認代碼是否正確 (例如 2002 或 2330)。');
+        if (error.status === 401) return;
+        console.error('取得股價失敗', error);
+        alert(error.status === 503 ? '請確認 Supabase 是否有啟動後再試一次。' : '股價資料暫時無法取得，請稍後再試。');
+        return;
+      }
+      if (!result.ok) {
+        alert(result.error === 'not_found'
+          ? '查無此台股代碼，請確認代碼是否正確 (例如 2002 或 2330)。'
+          : '股價資料暫時無法取得，請稍後再試。');
         return;
       }
 
@@ -926,8 +734,8 @@ export default function StockApp({ user }) {
         return;
       }
 
-      const { stock, candles } = fetched;
-      setRealHistoricalCandles(prev => ({ ...prev, [stock.id]: candles }));
+      const stock = toListItem(result);
+      setRealHistoricalCandles(prev => ({ ...prev, [stock.id]: result.candles }));
       setStocks(prev => [stock, ...prev.filter(s => s.id !== stock.id)]);
       setWatchlist(prev => [stock.id, ...prev]);
       setSelectedStock(stock);
@@ -946,7 +754,7 @@ export default function StockApp({ user }) {
 
     setWatchlist(nextWatchlist);
     if (wasSelected) {
-      setSelectedStock(stocks.find(s => nextWatchlist.includes(s.id)) ?? null);
+      setSelectedStock(stocks.find(s => nextWatchlist.includes(s.id) && !s.unavailable) ?? null);
     }
 
     try {
@@ -1001,8 +809,12 @@ export default function StockApp({ user }) {
     </div>
   );
 
-  if (watchlistError) {
-    const { title, message } = watchlistError === 'quote'
+  // 清單裡只剩抓不到資料的佔位項目時（其餘股票都被刪掉了），等同股價無法取得
+  const errorKind = watchlistError
+    ?? (!watchlistLoading && !selectedStock && watchlist.length > 0 ? 'quote' : null);
+
+  if (errorKind) {
+    const { title, message } = errorKind === 'quote'
       ? { title: '無法取得股價', message: 'FinMind 股價資料暫時無法取得，請稍後再試。' }
       : { title: '無法連線', message: '請確認 Supabase 是否有啟動。' };
     return (
@@ -1158,6 +970,19 @@ export default function StockApp({ user }) {
               </div>
               <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
                 {stocks.filter(s => watchlist.includes(s.id)).map(stock => {
+                  if (stock.unavailable) {
+                    return (
+                      <div key={stock.id} className="p-3 rounded-lg border-2 bg-[#15171a] border-[#1f2226] flex justify-between items-center">
+                        <div>
+                          <div className="text-sm font-bold text-slate-400 font-mono">{stock.id}</div>
+                          <span className="text-xs text-slate-500 font-bold">資料暫時無法取得</span>
+                        </div>
+                        <button onClick={() => handleRemoveStock(stock.id)} className="p-1 text-slate-500 hover:text-[#ff453a] transition-all">
+                          <Icon name="trash2" className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  }
                   const colors = getTrendColors(stock.change);
                   const isSelected = selectedStock.id === stock.id;
                   return (
@@ -1206,6 +1031,7 @@ export default function StockApp({ user }) {
                   <span className={'text-xs font-black ' + getTrendColors(selectedStock.change).text}>
                     {selectedStock.change >= 0 ? '+' : ''}{selectedStock.change.toFixed(1)} ({selectedStock.changePercent}%)
                   </span>
+                  <div className="text-[10px] text-[#9ba1a6] font-bold font-mono mt-0.5">資料日期 {selectedStock.dataDate}</div>
                 </div>
               </div>
 
@@ -1308,6 +1134,19 @@ export default function StockApp({ user }) {
         return (
           <div className="space-y-2">
             {stocks.filter(s => watchlist.includes(s.id)).map(stock => {
+              if (stock.unavailable) {
+                return (
+                  <div key={stock.id} className="p-3 rounded-xl border-2 bg-[#111315] border-[#1f2226] flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-bold text-slate-400 font-mono">{stock.id.replace('.TW', '')}</div>
+                      <span className="text-xs text-slate-500 font-bold">資料暫時無法取得</span>
+                    </div>
+                    <button onClick={() => handleRemoveStock(stock.id)} className="p-1 text-slate-500 hover:text-[#ff453a] transition-all">
+                      <Icon name="trash2" className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              }
               const colors = getTrendColors(stock.change);
               const isSelected = selectedStock.id === stock.id;
               return (
@@ -1332,6 +1171,7 @@ export default function StockApp({ user }) {
             <div className="bg-[#111315] border-2 border-[#22252a] rounded-xl p-3">
               <span className="text-xs text-slate-400 block uppercase font-black">當前標的</span>
               <h3 className="text-sm font-black text-white mt-0.5">{selectedStock.name} ({selectedStock.id})</h3>
+              <div className="text-[10px] text-[#9ba1a6] font-bold font-mono mt-0.5">資料日期 {selectedStock.dataDate}</div>
               <div className="mt-2 pt-2 border-t border-[#1f2125]">
                 <SimpleLineChart trendColors={getTrendColors(selectedStock.change)} points={currentCandles} />
               </div>
