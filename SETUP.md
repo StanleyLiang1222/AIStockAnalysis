@@ -74,5 +74,5 @@ INSERT INTO allowed_users (email) VALUES ('new-member@gmail.com') ON CONFLICT (e
 
 - **Vercel 專案的 Framework Preset 要設成 Next.js**：如果專案是從舊的靜態網站直接沿用設定，Framework Preset 可能還停留在舊的（預期輸出到 `public`），會導致建置失敗（`No Output Directory named "public" found`）。要去 Settings → General → Build & Development Settings 改成 Next.js。
 - **Google 登入的重新導向 URI 一定要用固定的正式網域**，不能用 Vercel 每次部署產生的專屬網址（網址裡有一串隨機 hash，每次部署都不一樣）。
-- **`pg` 連線字串裡的 `sslmode` 參數會蓋掉程式裡明確設定的 `ssl` 選項**：Supabase 的連線字串預設帶 `sslmode=require`，要先用 `URL` API 把這個參數拿掉（見 [lib/db.js](lib/db.js)），改用我們自己的 `ssl: { rejectUnauthorized: false }`，不然會出現 `self-signed certificate in certificate chain` 錯誤。
+- **`pg` 連線字串裡的 `sslmode` 參數會蓋掉程式裡明確設定的 `ssl` 選項**：Supabase 的連線字串預設帶 `sslmode=require`，要先用 `URL` API 把這個參數拿掉（見 [lib/db.js](lib/db.js)），改用我們自己的 `ssl` 設定。Supabase 的伺服器憑證由它自己的根 CA 簽發，不在 Node 內建的信任清單裡，所以要明確指定 CA（[lib/supabase-ca.js](lib/supabase-ca.js)，來源是 Supabase Dashboard → Database → Settings → SSL Configuration 下載的 `prod-ca-2021.crt`，有效期限至 2031-04-26），否則會出現 `self-signed certificate in certificate chain` 錯誤。不要用 `rejectUnauthorized: false` 繞過，那會關閉憑證驗證。
 - **`pg` 不能被 middleware.js 匯入**：Next.js 的 middleware 跑在 Edge runtime，`pg` 依賴 Node.js 專屬模組（`net`、`tls`、`fs`），所以拆成 [auth.config.js](auth.config.js)（edge-safe，middleware 專用）跟 [auth.js](auth.js)（含 Google provider + 資料庫白名單檢查，只在一般 Node.js runtime 使用）兩份設定。
