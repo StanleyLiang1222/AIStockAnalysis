@@ -22,7 +22,8 @@ function Amount({ value }) {
  */
 export function MarketBar({ market, loading }) {
   const { taiex, institutional, margin } = market ?? {};
-  const date = taiex?.date ?? institutional?.date ?? margin?.date;
+  // 盤中加權指數是即時的，法人與融資仍是盤後資料，日期以盤後資料為準
+  const date = institutional?.date ?? margin?.date ?? (taiex?.liveTime ? null : taiex?.date);
 
   return (
     <div className="bg-surface border-b-2 border-line-subtle overflow-x-auto">
@@ -40,6 +41,11 @@ export function MarketBar({ market, loading }) {
                   <span className={'font-mono ' + getTrendColors(taiex.change).text}>
                     {signed(taiex.change)}{taiex.changePercent != null && ` (${signed(taiex.changePercent, 2)}%)`}
                   </span>
+                  {taiex.liveTime && (
+                    <span className="text-fg-dim font-mono flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />即時 {taiex.liveTime}
+                    </span>
+                  )}
                 </>
               ) : <span className="text-fg-dim">—</span>}
             </Item>
@@ -49,7 +55,7 @@ export function MarketBar({ market, loading }) {
             <Item label="自營商"><Amount value={institutional?.dealer} /></Item>
             <span className="w-px h-3 bg-line-strong" />
             <Item label="融資"><Amount value={margin?.change} /></Item>
-            {date && <span className="text-fg-dim font-mono">資料日期 {date}</span>}
+            {date && <span className="text-fg-dim font-mono">盤後・資料日期 {date}</span>}
           </>
         )}
       </div>

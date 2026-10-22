@@ -53,7 +53,7 @@ export function StockDetail({
                   <span className="w-1.5 h-1.5 rounded-full bg-accent animate-ping" />
                   真實數據載入中...
                 </>
-              ) : <span className="hidden sm:inline">盤後高解析度診斷儀表板</span>}
+              ) : <span className="hidden sm:inline">高解析度診斷儀表板</span>}
             </span>
           </h2>
         </div>
@@ -62,7 +62,11 @@ export function StockDetail({
           <span className={'text-xs font-black ' + trend.text}>
             {stock.change >= 0 ? '+' : ''}{formatPrice(stock.change)} ({stock.changePercent}%)
           </span>
-          <div className="text-2xs text-fg-muted font-bold font-mono mt-0.5">資料日期 {stock.dataDate}</div>
+          <div className="text-2xs text-fg-muted font-bold font-mono mt-0.5 flex items-center justify-end gap-1.5">
+            {stock.liveTime ? (
+              <><span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />即時 {stock.liveTime}</>
+            ) : `盤後・資料日期 ${stock.dataDate}`}
+          </div>
         </div>
       </div>
 

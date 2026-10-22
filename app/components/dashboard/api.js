@@ -81,3 +81,8 @@ export async function generateAiReport(stockId) {
     body: JSON.stringify({ stockId }),
   });
 }
+
+// 今天盤中的即時行情 { index, quotes: { '2330.TW': quote } }；盤後、假日或證交所抓不到時為空
+export async function fetchRealtime(ids) {
+  return requestJson(`/api/realtime?ids=${ids.map(encodeURIComponent).join(',')}`);
+}

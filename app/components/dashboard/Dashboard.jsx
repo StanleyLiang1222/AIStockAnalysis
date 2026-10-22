@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { signOut } from 'next-auth/react';
@@ -8,6 +8,8 @@ import { useWatchlist } from './useWatchlist';
 import { useStockDetails } from './useStockDetails';
 import { useMarket } from './useMarket';
 import { useAiReport } from './useAiReport';
+import { useRealtime } from './useRealtime';
+import { applyQuote, appendLiveCandle, applyIndex } from './realtime';
 import { MarketBar } from './MarketBar';
 import { VIEWS } from './DetailPanels';
 import { AppHeader } from './AppHeader';
@@ -28,7 +30,13 @@ export function Dashboard({ user }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { stocks, candlesById, loading, error, busy, load, refresh, add, remove } = useWatchlist();
+  const { stocks: closedStocks, candlesById, loading, error, busy, load, refresh, add, remove } = useWatchlist();
+  // 盤中用證交所即時行情蓋上今天的股價（AI 報告在伺服器端只用 FinMind 盤後資料，不受影響）
+  const realtime = useRealtime(closedStocks.filter(s => !s.unavailable).map(s => s.id));
+  const stocks = useMemo(
+    () => closedStocks.map(s => applyQuote(s, realtime.quotes[s.id])),
+    [closedStocks, realtime]
+  );
   const [showAddModal, setShowAddModal] = useState(false);
   const [timeRange, setTimeRange] = useState('1M');
   const [chartType, setChartType] = useState('line');
@@ -40,7 +48,12 @@ export function Dashboard({ user }) {
   // 網址指定的股票不在清單裡（或已刪除），就退回清單第一檔
   const selectedStock = available.find(s => s.id === requestedId) ?? available[0] ?? null;
   const { details, status: detailsStatus, reload: reloadDetails } = useStockDetails(loading ? null : selectedStock?.id);
-  const { market, loading: marketLoading, reload: reloadMarket } = useMarket();
+  const { market: closedMarket, loading: marketLoading, reload: reloadMarket } = useMarket();
+  const market = useMemo(() => applyIndex(closedMarket, realtime.index), [closedMarket, realtime]);
+  const selectedCandles = useMemo(
+    () => (selectedStock ? appendLiveCandle(candlesById[selectedStock.id] ?? [], realtime.quotes[selectedStock.id]) : []),
+    [selectedStock, candlesById, realtime]
+  );
   const ai = useAiReport(loading ? null : selectedStock?.id);
 
   // 寫入網址：push 會留下瀏覽紀錄（返回鍵可退回），replace 不會
@@ -132,7 +145,7 @@ export function Dashboard({ user }) {
         <section className={(tab === 'watchlist' ? 'hidden lg:block ' : '') + 'lg:min-h-0 lg:overflow-y-auto lg:pr-0.5'}>
           <StockDetail
             stock={selectedStock}
-            candles={candlesById[selectedStock.id] ?? []}
+            candles={selectedCandles}
             refreshing={busy}
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}
