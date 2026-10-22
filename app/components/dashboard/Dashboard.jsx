@@ -7,11 +7,12 @@ import { signOut } from 'next-auth/react';
 import { useWatchlist } from './useWatchlist';
 import { useStockDetails } from './useStockDetails';
 import { useMarket } from './useMarket';
+import { useAiReport } from './useAiReport';
 import { MarketBar } from './MarketBar';
 import { VIEWS } from './DetailPanels';
 import { AppHeader } from './AppHeader';
 import { WatchlistPanel } from './WatchlistPanel';
-import { StockDetail, MobileAiPanel } from './StockDetail';
+import { StockDetail } from './StockDetail';
 import { MobileTabBar, MOBILE_TABS } from './MobileTabBar';
 import { AddStockModal } from './AddStockModal';
 import { LoadingScreen, ErrorScreen, StatusCard } from './StatusScreen';
@@ -19,7 +20,7 @@ import { LoadingScreen, ErrorScreen, StatusCard } from './StatusScreen';
 /**
  * 儀表板。版面依寬度切換（Tailwind lg = 1024px）：
  * - 1024px 以上：左側固定寬度自選清單 + 右側分析區
- * - 1024px 以下：底部分頁列切換「自選／分析／AI」，內容垂直堆疊
+ * - 1024px 以下：底部分頁列切換「自選／分析」，內容垂直堆疊
  * 選取的股票、手機版分頁、分析子分頁記錄在網址（?stock=2330.TW&tab=analysis&view=chips），
  * 返回鍵、重新整理、分享網址都會保留。切換子分頁只替換網址，不新增瀏覽紀錄。
  */
@@ -40,6 +41,7 @@ export function Dashboard({ user }) {
   const selectedStock = available.find(s => s.id === requestedId) ?? available[0] ?? null;
   const { details, status: detailsStatus, reload: reloadDetails } = useStockDetails(loading ? null : selectedStock?.id);
   const { market, loading: marketLoading, reload: reloadMarket } = useMarket();
+  const ai = useAiReport(loading ? null : selectedStock?.id);
 
   // 寫入網址：push 會留下瀏覽紀錄（返回鍵可退回），replace 不會
   const updateUrl = useCallback((params, { replace = false } = {}) => {
@@ -60,14 +62,21 @@ export function Dashboard({ user }) {
     }
   }, [loading, selectedStock, requestedId, updateUrl]);
 
+  // 舊版手機底部的「AI」分頁已改為分析區的子分頁，舊網址 ?tab=ai 導向新位置
+  const legacyAiTab = searchParams.get('tab') === 'ai';
+  useEffect(() => {
+    if (legacyAiTab) updateUrl({ tab: 'analysis', view: 'ai' }, { replace: true });
+  }, [legacyAiTab, updateUrl]);
+
   const handleSelect = (stockId) => updateUrl({ stock: stockId, tab: 'analysis' });
   const handleViewChange = (nextView) => updateUrl({ view: nextView }, { replace: true });
 
-  // 「更新數據」：清單股價、大盤、目前這檔的深入資料一起更新（都是讀伺服器快取）
+  // 「更新數據」：清單股價、大盤、目前這檔的深入資料與 AI 報告一起更新（都是讀伺服器快取，不會產生新報告）
   const handleRefresh = () => {
     refresh();
     reloadMarket();
     reloadDetails();
+    if (ai.status !== 'generating') ai.reload();
   };
 
   const handleAdd = async (query) => {
@@ -121,22 +130,20 @@ export function Dashboard({ user }) {
           onAdd={() => setShowAddModal(true)}
         />
         <section className={(tab === 'watchlist' ? 'hidden lg:block ' : '') + 'lg:min-h-0 lg:overflow-y-auto lg:pr-0.5'}>
-          <div className={tab === 'ai' ? 'hidden lg:block' : ''}>
-            <StockDetail
-              stock={selectedStock}
-              candles={candlesById[selectedStock.id] ?? []}
-              refreshing={busy}
-              timeRange={timeRange}
-              onTimeRangeChange={setTimeRange}
-              chartType={chartType}
-              onChartTypeChange={setChartType}
-              details={details}
-              detailsStatus={detailsStatus}
-              view={view}
-              onViewChange={handleViewChange}
-            />
-          </div>
-          {tab === 'ai' && <div className="lg:hidden"><MobileAiPanel /></div>}
+          <StockDetail
+            stock={selectedStock}
+            candles={candlesById[selectedStock.id] ?? []}
+            refreshing={busy}
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            chartType={chartType}
+            onChartTypeChange={setChartType}
+            details={details}
+            detailsStatus={detailsStatus}
+            ai={ai}
+            view={view}
+            onViewChange={handleViewChange}
+          />
         </section>
       </main>
 

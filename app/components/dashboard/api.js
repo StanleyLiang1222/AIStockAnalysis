@@ -67,3 +67,17 @@ export async function fetchStockDetails(stockId) {
 export async function fetchMarket() {
   return requestJson('/api/market');
 }
+
+// AI 健檢報告 { dataDate, status: 'none' | 'generating' | 'ready', report, createdAt }
+export async function fetchAiReport(stockId) {
+  return requestJson(`/api/ai-report?id=${encodeURIComponent(stockId)}`);
+}
+
+// 產生 AI 健檢報告（約 20–60 秒）。別人正在產生同一份時回傳 status: 'generating'
+export async function generateAiReport(stockId) {
+  return requestJson('/api/ai-report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stockId }),
+  });
+}

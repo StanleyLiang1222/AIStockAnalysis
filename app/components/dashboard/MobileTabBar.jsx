@@ -1,12 +1,11 @@
 import Link from 'next/link';
 import { Icon } from '@/app/components/ui/Icon';
 
-export const MOBILE_TABS = ['watchlist', 'analysis', 'ai'];
+export const MOBILE_TABS = ['watchlist', 'analysis'];
 
 const ITEMS = [
   { tab: 'watchlist', icon: 'activity', label: '自選' },
   { tab: 'analysis', icon: 'barChart2', label: '分析' },
-  { tab: 'ai', icon: 'sparkles', label: 'AI' },
 ];
 
 /**

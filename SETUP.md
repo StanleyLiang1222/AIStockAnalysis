@@ -23,14 +23,25 @@
 3. Connect a Project 時，Environments 記得三個（Production / Preview / **Development**）都勾，才能在本機用 `vercel env pull` 拉到
 4. 建立完成後，Vercel 會自動注入 `POSTGRES_URL` 等一整組環境變數到專案
 
-## 3. 本機開發拉環境變數
+## 3. 外部服務金鑰
+
+Vercel Dashboard → 專案 → Settings → Environment Variables 設定以下變數，勾選 **Sensitive**，環境勾 Production 和 Preview：
+
+- `FINMIND_TOKEN`：FinMind 註冊後在使用者資訊頁取得，所有股票資料都從伺服器端用這組 token 呼叫
+- `ANTHROPIC_API_KEY`：AI 健檢報告用。到 [Anthropic Console](https://console.anthropic.com/) → API Keys 建立
+  - 建議為這個專案開一個獨立的 workspace 再建 key，可以分開看用量、設這個專案自己的每月花費上限，key 外洩時也只影響這個專案
+  - 模型是 Claude Opus 5.5（effort low），每份報告約 US$0.06；同一檔股票每個交易日只產生一次、所有使用者共用（存在 `ai_reports` 表）
+
+Sensitive 變數不能勾 Development，所以 `vercel env pull` 拉不到，本機開發要手動把這兩個值填進 `.env.local`。沒有填 `ANTHROPIC_API_KEY` 時，其他功能照常，按「產生 AI 健檢」會顯示服務暫時無法使用。
+
+## 4. 本機開發拉環境變數
 
 ```bash
 npx vercel link --project ai-stock-analysis   # 第一次要先 link 到正確的 Vercel 專案
 npx vercel env pull .env.local --environment=development
 ```
 
-## 4. 初始化資料庫
+## 5. 初始化資料庫
 
 `allowed_users` / `watchlist` 兩張表理論上會由 [auth.js](auth.js) 的登入流程自動建立（`ensureSchema()`），但建議部署後先手動在 **Supabase Dashboard → SQL Editor** 貼上下面這段執行一次，順便把白名單初始成員也一起匯入：
 
@@ -70,7 +81,7 @@ ON CONFLICT (email) DO NOTHING;
 INSERT INTO allowed_users (email) VALUES ('new-member@gmail.com') ON CONFLICT (email) DO NOTHING;
 ```
 
-## 5. 已知的踩坑紀錄（給以後參考）
+## 6. 已知的踩坑紀錄（給以後參考）
 
 - **Vercel 專案的 Framework Preset 要設成 Next.js**：如果專案是從舊的靜態網站直接沿用設定，Framework Preset 可能還停留在舊的（預期輸出到 `public`），會導致建置失敗（`No Output Directory named "public" found`）。要去 Settings → General → Build & Development Settings 改成 Next.js。
 - **Google 登入的重新導向 URI 一定要用固定的正式網域**，不能用 Vercel 每次部署產生的專屬網址（網址裡有一串隨機 hash，每次部署都不一樣）。

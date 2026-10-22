@@ -5,12 +5,14 @@ import { ChipsBarChart } from '@/app/components/charts/ChipsBarChart';
 import { BarSeries, Sparkline, RangeBar, BarLineCombo, MultiLine } from '@/app/components/charts/MiniCharts';
 import { getTrendColors } from '@/lib/format';
 import { colors } from '@/lib/theme';
+import { AiCard } from './AiReport';
 
 export const VIEWS = [
   { key: 'overview', label: '總覽' },
   { key: 'chips', label: '籌碼' },
   { key: 'fundamentals', label: '基本面' },
   { key: 'dividends', label: '股利' },
+  { key: 'ai', label: 'AI 健檢' },
 ];
 
 const CARD = 'bg-surface border-2 border-line rounded-xl p-4';
@@ -71,23 +73,9 @@ export function ViewTabs({ view, onChange }) {
   );
 }
 
-export function AiCard({ className = '' }) {
-  return (
-    <div className={CARD + ' flex flex-col justify-between gap-2 ' + className}>
-      <div className="flex justify-between items-center">
-        <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="sparkles" className="w-4 h-4 text-accent" /> AI 多空健檢</span>
-        <button disabled className="px-2 py-0.5 bg-surface-raised text-fg-faint border border-line-strong rounded text-2xs font-black cursor-not-allowed">尚未開放</button>
-      </div>
-      <div className="bg-surface-raised border-2 border-line-subtle rounded-lg p-2 flex-1 min-h-16 flex items-center justify-center text-2xs text-fg-muted font-bold">
-        AI 分析功能規劃中
-      </div>
-    </div>
-  );
-}
-
 // ==================== 總覽 ====================
 
-export function OverviewPanel({ stock, details, status, onNavigate }) {
+export function OverviewPanel({ stock, details, status, ai, onNavigate }) {
   const pending = status === 'loading' && !details ? '...' : '—';
   const { valuation, institutional, margin, revenueTrend, dividends } = details ?? {};
   const foreign = streakText(institutional?.foreignStreak);
@@ -119,7 +107,7 @@ export function OverviewPanel({ stock, details, status, onNavigate }) {
           : latestDividend ? `${latestDividend.cash || latestDividend.stock} 元` : pending}
         sub={dividends?.upcoming ? dividends.upcoming.exDate
           : latestDividend ? (latestDividend.filled ? `第 ${latestDividend.fillDays} 天填息` : '尚未填息') : null} />
-      <AiCard className="hidden lg:flex" />
+      <AiCard ai={ai} onNavigate={onNavigate} className="hidden lg:flex" />
     </div>
   );
 }

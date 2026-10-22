@@ -6,6 +6,7 @@ import { LineChart } from '@/app/components/charts/LineChart';
 import { CandlestickChart } from '@/app/components/charts/CandlestickChart';
 import { DailyCandlePanel } from '@/app/components/charts/DailyCandlePanel';
 import { ViewTabs, OverviewPanel, ChipsPanel, FundamentalsPanel, DividendsPanel } from './DetailPanels';
+import { AiReportPanel } from './AiReport';
 import { formatPrice, getTrendColors } from '@/lib/format';
 
 // 走勢圖各區間取最近幾根日 K（1D 不畫走勢，另外顯示當日單根 K 棒）
@@ -19,16 +20,17 @@ const PANELS = {
   chips: ChipsPanel,
   fundamentals: FundamentalsPanel,
   dividends: DividendsPanel,
+  ai: AiReportPanel,
 };
 
 /**
- * 個股分析：價格橫幅、走勢圖，下方以子分頁切換「總覽／籌碼／基本面／股利」。
- * 電腦版是右側分析區，手機版是「分析」分頁（AI 在手機版是獨立分頁，電腦版放在總覽最後一格）。
- * details 是選到這檔股票時才載入的深入資料（status: loading / ok / error）。
+ * 個股分析：價格橫幅、走勢圖，下方以子分頁切換「總覽／籌碼／基本面／股利／AI 健檢」。
+ * 電腦版是右側分析區，手機版是「分析」分頁。電腦版的總覽最後一格另外顯示 AI 總評。
+ * details 是選到這檔股票時才載入的深入資料（status: loading / ok / error）；ai 是 useAiReport 的狀態。
  */
 export function StockDetail({
   stock, candles, refreshing, timeRange, onTimeRangeChange, chartType, onChartTypeChange,
-  details, detailsStatus, view, onViewChange,
+  details, detailsStatus, ai, view, onViewChange,
 }) {
   const Panel = PANELS[view] ?? OverviewPanel;
   const currentCandles = useMemo(
@@ -108,27 +110,7 @@ export function StockDetail({
 
       {/* 子分頁 */}
       <ViewTabs view={view} onChange={onViewChange} />
-      <Panel stock={stock} details={details} status={detailsStatus} onNavigate={onViewChange} />
-    </div>
-  );
-}
-
-/**
- * 手機版「AI」分頁
- */
-export function MobileAiPanel() {
-  return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-b from-accent/20 to-surface border-2 border-accent/30 rounded-xl p-4 text-center space-y-2">
-        <Icon name="sparkles" className="w-6 h-6 text-accent-soft mx-auto" />
-        <h3 className="text-xs font-black text-white">AI 籌碼多空分析師</h3>
-        <button disabled className="w-full py-2 bg-surface-raised text-fg-faint border-2 border-line-strong text-xs font-bold rounded-lg cursor-not-allowed">
-          尚未開放
-        </button>
-      </div>
-      <div className={CARD + ' p-3 text-xs leading-relaxed text-fg-muted font-bold min-h-36 flex items-center justify-center'}>
-        AI 分析功能規劃中
-      </div>
+      <Panel stock={stock} details={details} status={detailsStatus} ai={ai} onNavigate={onViewChange} />
     </div>
   );
 }
