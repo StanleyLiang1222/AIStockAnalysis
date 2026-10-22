@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { useWatchlist } from './useWatchlist';
+import { useStockDetails } from './useStockDetails';
+import { useMarket } from './useMarket';
+import { MarketBar } from './MarketBar';
+import { VIEWS } from './DetailPanels';
 import { AppHeader } from './AppHeader';
 import { WatchlistPanel } from './WatchlistPanel';
 import { StockDetail, MobileAiPanel } from './StockDetail';
@@ -16,7 +20,8 @@ import { LoadingScreen, ErrorScreen, StatusCard } from './StatusScreen';
  * 儀表板。版面依寬度切換（Tailwind lg = 1024px）：
  * - 1024px 以上：左側固定寬度自選清單 + 右側分析區
  * - 1024px 以下：底部分頁列切換「自選／分析／AI」，內容垂直堆疊
- * 選取的股票與手機版分頁記錄在網址（?stock=2330.TW&tab=analysis），返回鍵、重新整理、分享網址都會保留。
+ * 選取的股票、手機版分頁、分析子分頁記錄在網址（?stock=2330.TW&tab=analysis&view=chips），
+ * 返回鍵、重新整理、分享網址都會保留。切換子分頁只替換網址，不新增瀏覽紀錄。
  */
 export function Dashboard({ user }) {
   const router = useRouter();
@@ -28,10 +33,13 @@ export function Dashboard({ user }) {
   const [chartType, setChartType] = useState('line');
 
   const tab = MOBILE_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'watchlist';
+  const view = VIEWS.some(v => v.key === searchParams.get('view')) ? searchParams.get('view') : 'overview';
   const requestedId = searchParams.get('stock');
   const available = stocks.filter(s => !s.unavailable);
   // 網址指定的股票不在清單裡（或已刪除），就退回清單第一檔
   const selectedStock = available.find(s => s.id === requestedId) ?? available[0] ?? null;
+  const { details, status: detailsStatus, reload: reloadDetails } = useStockDetails(loading ? null : selectedStock?.id);
+  const { market, loading: marketLoading, reload: reloadMarket } = useMarket();
 
   // 寫入網址：push 會留下瀏覽紀錄（返回鍵可退回），replace 不會
   const updateUrl = useCallback((params, { replace = false } = {}) => {
@@ -53,6 +61,14 @@ export function Dashboard({ user }) {
   }, [loading, selectedStock, requestedId, updateUrl]);
 
   const handleSelect = (stockId) => updateUrl({ stock: stockId, tab: 'analysis' });
+  const handleViewChange = (nextView) => updateUrl({ view: nextView }, { replace: true });
+
+  // 「更新數據」：清單股價、大盤、目前這檔的深入資料一起更新（都是讀伺服器快取）
+  const handleRefresh = () => {
+    refresh();
+    reloadMarket();
+    reloadDetails();
+  };
 
   const handleAdd = async (query) => {
     const result = await add(query);
@@ -91,7 +107,8 @@ export function Dashboard({ user }) {
 
   return (
     <div className="min-h-screen lg:h-screen flex flex-col bg-canvas">
-      <AppHeader user={user} refreshing={busy} onRefresh={refresh} />
+      <AppHeader user={user} refreshing={busy} onRefresh={handleRefresh} />
+      <MarketBar market={market} loading={marketLoading} />
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pt-4 pb-20 lg:max-w-none lg:min-h-0 lg:pb-4 lg:grid lg:grid-cols-dashboard lg:grid-rows-1 lg:gap-4">
         <WatchlistPanel
@@ -113,6 +130,10 @@ export function Dashboard({ user }) {
               onTimeRangeChange={setTimeRange}
               chartType={chartType}
               onChartTypeChange={setChartType}
+              details={details}
+              detailsStatus={detailsStatus}
+              view={view}
+              onViewChange={handleViewChange}
             />
           </div>
           {tab === 'ai' && <div className="lg:hidden"><MobileAiPanel /></div>}
@@ -125,7 +146,7 @@ export function Dashboard({ user }) {
         <Link href="/guide" className="text-accent hover:text-accent-soft font-black transition-all underline">點此查看 K線型態圖典</Link>
       </footer>
 
-      <MobileTabBar active={tab} stockId={selectedStock.id} />
+      <MobileTabBar active={tab} stockId={selectedStock.id} view={view} />
       {addModal}
     </div>
   );

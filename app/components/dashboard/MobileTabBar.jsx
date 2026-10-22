@@ -11,12 +11,13 @@ const ITEMS = [
 
 /**
  * 手機版底部分頁列（1024px 以上隱藏）。每個分頁都是一個網址，返回鍵可以退回上一個分頁。
- * active 為目前分頁（'guide' 代表在 /guide 頁），stockId 為目前選取的股票（切換分頁時保留）。
+ * active 為目前分頁（'guide' 代表在 /guide 頁）；stockId、view 為目前選取的股票與分析子分頁（切換分頁時保留）。
  */
-export function MobileTabBar({ active, stockId }) {
+export function MobileTabBar({ active, stockId, view }) {
   const hrefFor = (tab) => {
     const params = new URLSearchParams({ tab });
     if (stockId) params.set('stock', stockId);
+    if (view) params.set('view', view);
     return `/?${params}`;
   };
   const itemClass = (isActive) => 'flex flex-col items-center gap-0.5 px-4 ' + (isActive ? 'text-accent' : 'text-fg-faint');

@@ -5,7 +5,7 @@ import { Icon } from '@/app/components/ui/Icon';
 import { LineChart } from '@/app/components/charts/LineChart';
 import { CandlestickChart } from '@/app/components/charts/CandlestickChart';
 import { DailyCandlePanel } from '@/app/components/charts/DailyCandlePanel';
-import { ChipsBarChart } from '@/app/components/charts/ChipsBarChart';
+import { ViewTabs, OverviewPanel, ChipsPanel, FundamentalsPanel, DividendsPanel } from './DetailPanels';
 import { formatPrice, getTrendColors } from '@/lib/format';
 
 // 走勢圖各區間取最近幾根日 K（1D 不畫走勢，另外顯示當日單根 K 棒）
@@ -14,23 +14,28 @@ const RANGES = ['1D', '5D', '1M', '3M', '1Y'];
 
 const CARD = 'bg-surface border-2 border-line rounded-xl';
 
+const PANELS = {
+  overview: OverviewPanel,
+  chips: ChipsPanel,
+  fundamentals: FundamentalsPanel,
+  dividends: DividendsPanel,
+};
+
 /**
- * 個股分析：價格橫幅、走勢圖、三大法人、財務指標、AI 卡片。
- * 電腦版是右側分析區，手機版是「分析」分頁（垂直堆疊；AI 在獨立分頁，這裡只在電腦版顯示）。
+ * 個股分析：價格橫幅、走勢圖，下方以子分頁切換「總覽／籌碼／基本面／股利」。
+ * 電腦版是右側分析區，手機版是「分析」分頁（AI 在手機版是獨立分頁，電腦版放在總覽最後一格）。
+ * details 是選到這檔股票時才載入的深入資料（status: loading / ok / error）。
  */
-export function StockDetail({ stock, candles, refreshing, timeRange, onTimeRangeChange, chartType, onChartTypeChange }) {
+export function StockDetail({
+  stock, candles, refreshing, timeRange, onTimeRangeChange, chartType, onChartTypeChange,
+  details, detailsStatus, view, onViewChange,
+}) {
+  const Panel = PANELS[view] ?? OverviewPanel;
   const currentCandles = useMemo(
     () => (RANGE_DAYS[timeRange] ? candles.slice(-RANGE_DAYS[timeRange]) : []),
     [timeRange, candles]
   );
   const trend = getTrendColors(stock.change);
-
-  // 財報類指標：ETF 等沒有財報的標的為 null，顯示「—」
-  const financialMetrics = [
-    { label: 'EPS', period: stock.epsPeriod, value: stock.eps, format: (v) => `${v} 元`, colored: false },
-    { label: 'YoY', period: stock.yoyPeriod, value: stock.yoy, format: (v) => `${v > 0 ? '+' : ''}${v}%`, colored: true },
-    { label: 'ROE', period: '近四季', value: stock.roe, format: (v) => `${v}%`, colored: false },
-  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -101,36 +106,9 @@ export function StockDetail({ stock, candles, refreshing, timeRange, onTimeRange
         )}
       </div>
 
-      {/* 籌碼、財務、AI */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-shrink-0">
-        <div className={CARD + ' p-3 flex flex-col justify-between shadow-md min-h-40'}>
-          <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="barChart2" className="w-4 h-4 text-violet" /> 三大法人買賣超 (張)</span>
-          <div className="flex-1 flex flex-col justify-center mt-2 lg:mt-0"><ChipsBarChart chips={stock.chips} /></div>
-        </div>
-        <div className={CARD + ' p-3 flex flex-col justify-between shadow-md min-h-40'}>
-          <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="pieChart" className="w-4 h-4 text-down font-black" /> 財務季度診斷</span>
-          <div className="grid grid-cols-3 gap-2 flex-1 items-center mt-1">
-            {financialMetrics.map(m => (
-              <div key={m.label} className="text-center">
-                <div className="text-2xs text-slate-300 font-bold">{m.label}</div>
-                <div className={'text-lg font-mono font-black mt-0.5 ' + (m.value != null && m.colored ? getTrendColors(m.value).text : 'text-white')}>
-                  {m.value != null ? m.format(m.value) : '—'}
-                </div>
-                <div className="text-2xs text-fg-muted font-bold font-mono mt-0.5">{m.value != null && m.period ? m.period : ' '}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className={CARD + ' p-3 hidden lg:flex flex-col justify-between shadow-md min-h-40'}>
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="sparkles" className="w-4 h-4 text-accent" /> AI 多空健檢</span>
-            <button disabled className="px-2 py-0.5 bg-surface-raised text-fg-faint border border-line-strong rounded text-2xs font-black cursor-not-allowed">尚未開放</button>
-          </div>
-          <div className="bg-surface-raised border-2 border-line-subtle rounded-lg p-2 h-24 flex items-center justify-center text-2xs leading-relaxed text-fg-muted font-bold mt-1">
-            AI 分析功能規劃中
-          </div>
-        </div>
-      </div>
+      {/* 子分頁 */}
+      <ViewTabs view={view} onChange={onViewChange} />
+      <Panel stock={stock} details={details} status={detailsStatus} onNavigate={onViewChange} />
     </div>
   );
 }

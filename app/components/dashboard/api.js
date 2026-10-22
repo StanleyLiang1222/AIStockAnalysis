@@ -57,3 +57,13 @@ export async function searchStocks(query, signal) {
   const { results } = await requestJson(`/api/stocks/search?q=${encodeURIComponent(query)}`, { signal });
   return results;
 }
+
+// 個股深入資料（估值、籌碼延伸、基本面延伸、股利），各區塊抓不到時為 null
+export async function fetchStockDetails(stockId) {
+  return requestJson(`/api/stocks/details?id=${encodeURIComponent(stockId)}`);
+}
+
+// 大盤資訊 { taiex, institutional, margin }，抓不到的項目為 null
+export async function fetchMarket() {
+  return requestJson('/api/market');
+}
