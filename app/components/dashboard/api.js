@@ -49,3 +49,11 @@ export async function fetchStocks(ids) {
 export const toListItem = (result) => (
   result.ok ? { ...result.stock, dataDate: result.dataDate } : { id: result.id, unavailable: true }
 );
+
+/**
+ * 依名稱或代碼搜尋股票（伺服器端搜尋），回傳最多 10 筆 [{ id: '2603.TW', name, category, market }]
+ */
+export async function searchStocks(query, signal) {
+  const { results } = await requestJson(`/api/stocks/search?q=${encodeURIComponent(query)}`, { signal });
+  return results;
+}
