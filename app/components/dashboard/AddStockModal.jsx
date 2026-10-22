@@ -90,8 +90,8 @@ export function AddStockModal({ busy, onSubmit, onClose }) {
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-start sm:items-center justify-center z-50 p-4 pt-16 sm:pt-4">
       <div className="bg-surface border-2 border-line-strong w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl">
         <div className="px-5 py-3 border-b-2 border-line-subtle flex justify-between items-center">
-          <h4 className="text-sm font-black text-white flex items-center gap-1.5"><Icon name="plus" className="w-4 h-4 text-accent" /> 新增自選監控標的</h4>
-          <button onClick={onClose} className="text-fg-faint hover:text-white text-xs font-black">關閉</button>
+          <h4 className="text-sm font-black text-fg flex items-center gap-1.5"><Icon name="plus" className="w-4 h-4 text-accent" /> 新增自選監控標的</h4>
+          <button onClick={onClose} className="text-fg-faint hover:text-fg text-xs font-black">關閉</button>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); confirm(); }} className="p-5 space-y-3">
           <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={handleKeyDown}
@@ -101,7 +101,7 @@ export function AddStockModal({ busy, onSubmit, onClose }) {
             aria-controls="stock-suggestions"
             aria-activedescendant={suggestions[activeIndex] ? `stock-option-${activeIndex}` : undefined}
             autoComplete="off"
-            className="w-full bg-surface-raised border-2 border-line-strong rounded-xl px-3.5 py-2.5 text-base lg:text-xs text-white placeholder-fg-faint font-bold focus:outline-none focus:border-accent"
+            className="w-full bg-surface-raised border-2 border-line-strong rounded-xl px-3.5 py-2.5 text-base lg:text-xs text-fg placeholder-fg-faint font-bold focus:outline-none focus:border-accent"
             autoFocus />
 
           {suggestions.length > 0 && (
@@ -115,8 +115,8 @@ export function AddStockModal({ busy, onSubmit, onClose }) {
                     disabled={busy}
                     className={'w-full px-3.5 py-2.5 flex items-center gap-3 text-left transition-all ' + (i === activeIndex ? 'bg-surface-selected' : '')}
                   >
-                    <span className="text-xs font-mono font-bold text-slate-300 w-14 flex-shrink-0">{s.id.replace('.TW', '')}</span>
-                    <span className="text-sm font-bold text-white truncate">{s.name}</span>
+                    <span className="text-xs font-mono font-bold text-fg w-14 flex-shrink-0">{s.id.replace('.TW', '')}</span>
+                    <span className="text-sm font-bold text-fg truncate">{s.name}</span>
                     <span className="ml-auto text-2xs text-fg-muted font-bold flex-shrink-0 max-w-28 truncate">{MARKET_LABEL[s.market]}・{s.category}</span>
                   </button>
                 </li>
@@ -128,7 +128,7 @@ export function AddStockModal({ busy, onSubmit, onClose }) {
           )}
 
           <div className="flex gap-2 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2 bg-surface-raised text-slate-400 text-xs font-bold rounded-lg border-2 border-line-strong">取消</button>
+            <button type="button" onClick={onClose} className="flex-1 py-2 bg-surface-raised text-fg-muted text-xs font-bold rounded-lg border-2 border-line-strong">取消</button>
             <button type="submit" disabled={busy} className="flex-1 py-2 bg-accent text-white text-xs font-bold rounded-lg hover:bg-accent-hover">{busy ? '新增中...' : '確認新增'}</button>
           </div>
         </form>

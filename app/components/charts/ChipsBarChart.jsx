@@ -12,7 +12,7 @@ export function ChipsBarChart({ chips }) {
         const widthPercent = Math.min(100, (Math.abs(t.val) / 4500) * 100);
         return (
           <div key={i} className="text-xs">
-            <div className="flex justify-between mb-1 text-slate-200 font-black">
+            <div className="flex justify-between mb-1 text-fg font-black">
               <span>{t.label}</span>
               <span className={'font-mono font-black ' + trend.text}>{t.val > 0 ? '+' : ''}{t.val}</span>
             </div>

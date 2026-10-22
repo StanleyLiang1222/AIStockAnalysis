@@ -65,7 +65,7 @@ function ErrorState({ ai }) {
       <span className="text-2xs text-fg-muted font-bold text-center">{errorText(ai.errorStatus)}</span>
       {/* 讀取失敗（還不知道資料日期）就重新讀取；產生失敗就重新產生 */}
       <button onClick={ai.dataDate ? ai.generate : ai.reload}
-        className="px-3 py-1 bg-surface-raised border border-line-strong rounded text-2xs font-black text-white hover:border-accent">
+        className="px-3 py-1 bg-surface-raised border border-line-strong rounded text-2xs font-black text-fg hover:border-accent">
         再試一次
       </button>
     </div>
@@ -80,7 +80,7 @@ export function AiCard({ ai, onNavigate, className = '' }) {
   return (
     <div className={CARD + ' p-4 flex flex-col justify-between gap-2 ' + className}>
       <div className="flex justify-between items-center gap-2">
-        <span className="text-xs font-black text-white flex items-center gap-1.5"><Icon name="sparkles" className="w-4 h-4 text-accent" /> AI 多空健檢</span>
+        <span className="text-xs font-black text-fg flex items-center gap-1.5"><Icon name="sparkles" className="w-4 h-4 text-accent" /> AI 多空健檢</span>
         {ready && <StanceBadge stance={ai.report.overall.stance} />}
       </div>
       <div className="bg-surface-raised border-2 border-line-subtle rounded-lg p-2 flex-1 min-h-16 flex items-center justify-center">
@@ -109,7 +109,7 @@ export function AiReportPanel({ ai }) {
     <div className="flex flex-col gap-4">
       <div className={CARD + ' p-4 flex flex-col gap-3'}>
         <div className="flex justify-between items-center gap-2 flex-wrap">
-          <span className="text-sm font-black text-white flex items-center gap-1.5">
+          <span className="text-sm font-black text-fg flex items-center gap-1.5">
             <Icon name="sparkles" className="w-5 h-5 text-accent" /> AI 多空健檢
           </span>
           {ai.dataDate && (
@@ -148,7 +148,7 @@ export function AiReportPanel({ ai }) {
               return (
                 <div key={key} className={CARD + ' p-4 flex flex-col gap-3'}>
                   <div className="flex justify-between items-center gap-2">
-                    <span className="text-xs font-black text-white flex items-center gap-1.5">
+                    <span className="text-xs font-black text-fg flex items-center gap-1.5">
                       <Icon name={icon} className="w-4 h-4 text-accent" /> {label}
                     </span>
                     <StanceBadge stance={facet.stance} />

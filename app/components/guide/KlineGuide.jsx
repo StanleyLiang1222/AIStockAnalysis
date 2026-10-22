@@ -19,7 +19,7 @@ export function KlineGuide() {
     <div className="w-full space-y-5 fade-in-up">
       <div className="bg-surface border-2 border-line rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-base font-black text-white flex items-center gap-2">
+          <h2 className="text-base font-black text-fg flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-accent inline-block"></span>
             K 線經典型態圖典
           </h2>
@@ -28,10 +28,10 @@ export function KlineGuide() {
           </p>
         </div>
         <div className="flex bg-inset p-1 rounded-lg border-2 border-line text-xs font-black self-stretch md:self-auto justify-between md:justify-start gap-1">
-          <button onClick={() => setFilter('all')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'all' ? 'bg-line text-white border border-line-strong shadow' : 'text-fg-faint hover:text-white')}>全部 ({KLINE_TEMPLATES.length})</button>
-          <button onClick={() => setFilter('up')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'up' ? 'bg-line text-up border border-up/20 shadow' : 'text-fg-faint hover:text-white')}>陽線 ({KLINE_TEMPLATES.filter(t => t.type === 'up').length})</button>
-          <button onClick={() => setFilter('down')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'down' ? 'bg-line text-down border border-down/20 shadow' : 'text-fg-faint hover:text-white')}>陰線 ({KLINE_TEMPLATES.filter(t => t.type === 'down').length})</button>
-          <button onClick={() => setFilter('cross')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'cross' ? 'bg-line text-fg-muted border border-fg-muted/20 shadow' : 'text-fg-faint hover:text-white')}>十字線 ({KLINE_TEMPLATES.filter(t => t.type === 'cross').length})</button>
+          <button onClick={() => setFilter('all')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'all' ? 'bg-line text-fg border border-line-strong shadow' : 'text-fg-faint hover:text-fg')}>全部 ({KLINE_TEMPLATES.length})</button>
+          <button onClick={() => setFilter('up')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'up' ? 'bg-line text-up border border-up/20 shadow' : 'text-fg-faint hover:text-fg')}>陽線 ({KLINE_TEMPLATES.filter(t => t.type === 'up').length})</button>
+          <button onClick={() => setFilter('down')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'down' ? 'bg-line text-down border border-down/20 shadow' : 'text-fg-faint hover:text-fg')}>陰線 ({KLINE_TEMPLATES.filter(t => t.type === 'down').length})</button>
+          <button onClick={() => setFilter('cross')} className={'px-3.5 py-1.5 rounded-md transition-all ' + (filter === 'cross' ? 'bg-line text-fg-muted border border-fg-muted/20 shadow' : 'text-fg-faint hover:text-fg')}>十字線 ({KLINE_TEMPLATES.filter(t => t.type === 'cross').length})</button>
         </div>
       </div>
 
@@ -42,7 +42,7 @@ export function KlineGuide() {
               <div className="flex justify-between items-start gap-2 mb-3">
                 <div>
                   <span className="text-2xs font-mono text-accent-soft font-black uppercase">型態 #{template.id}</span>
-                  <h3 className="text-sm font-black text-white mt-0.5 flex items-center gap-1.5">
+                  <h3 className="text-sm font-black text-fg mt-0.5 flex items-center gap-1.5">
                     {template.name}
                     <span className="text-xs text-fg-muted font-bold">({template.sub})</span>
                   </h3>
@@ -64,7 +64,7 @@ export function KlineGuide() {
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 font-bold leading-relaxed pt-3.5 border-t border-line-subtle/80 mt-4">
+            <p className="text-xs text-fg font-bold leading-relaxed pt-3.5 border-t border-line-subtle/80 mt-4">
               {template.desc}
             </p>
           </div>

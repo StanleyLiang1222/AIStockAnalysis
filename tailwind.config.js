@@ -1,4 +1,5 @@
-const { colors } = require('./lib/theme');
+const plugin = require('tailwindcss/plugin');
+const { palettes, tailwindColors, cssVariables } = require('./lib/theme');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -6,7 +7,7 @@ module.exports = {
   content: ['./app/**/*.{js,jsx,ts,tsx}', './lib/**/*.js'],
   theme: {
     extend: {
-      colors,
+      colors: tailwindColors,
       fontSize: {
         '3xs': '9px',
         '2xs': '10px',
@@ -20,5 +21,13 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // 色彩 CSS 變數：預設深色；<html> 加上 light class 時換成淺色（由 app/layout.js 的 ThemeScript 決定）
+    plugin(({ addBase }) => {
+      addBase({
+        ':root': { ...cssVariables(palettes.dark), colorScheme: 'dark' },
+        ':root.light': { ...cssVariables(palettes.light), colorScheme: 'light' },
+      });
+    }),
+  ],
 };

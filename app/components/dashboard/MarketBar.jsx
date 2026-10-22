@@ -37,7 +37,7 @@ export function MarketBar({ market, loading }) {
             <Item label="加權指數">
               {taiex ? (
                 <>
-                  <span className="font-mono font-black text-white">{formatPrice(taiex.close)}</span>
+                  <span className="font-mono font-black text-fg">{formatPrice(taiex.close)}</span>
                   <span className={'font-mono ' + getTrendColors(taiex.change).text}>
                     {signed(taiex.change)}{taiex.changePercent != null && ` (${signed(taiex.changePercent, 2)}%)`}
                   </span>

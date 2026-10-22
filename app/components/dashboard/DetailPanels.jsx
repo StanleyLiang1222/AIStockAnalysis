@@ -23,7 +23,7 @@ function Card({ title, icon, iconClass = 'text-accent', aside, children, classNa
   return (
     <div className={CARD + ' flex flex-col gap-3 ' + className}>
       <div className="flex justify-between items-center gap-2">
-        <span className="text-xs font-black text-white flex items-center gap-1.5">
+        <span className="text-xs font-black text-fg flex items-center gap-1.5">
           {icon && <Icon name={icon} className={'w-4 h-4 ' + iconClass} />} {title}
         </span>
         {aside}
@@ -41,7 +41,7 @@ function Section({ status, data, emptyText = '資料暫時無法取得', childre
   return children(data);
 }
 
-function Metric({ label, value, sub, valueClass = 'text-white', onClick }) {
+function Metric({ label, value, sub, valueClass = 'text-fg', onClick }) {
   const Tag = onClick ? 'button' : 'div';
   return (
     <Tag onClick={onClick} className={'text-left ' + (onClick ? 'bg-surface-raised border-2 border-line-subtle hover:border-line-strong rounded-lg p-3 transition-all' : '')}>
@@ -65,7 +65,7 @@ export function ViewTabs({ view, onChange }) {
     <div className="flex bg-surface-raised p-1 rounded-lg border-2 border-line-strong text-xs">
       {VIEWS.map(v => (
         <button key={v.key} onClick={() => onChange(v.key)}
-          className={'flex-1 px-3 py-1.5 rounded-md font-black transition-all ' + (view === v.key ? 'bg-line text-white shadow' : 'text-fg-faint hover:text-white')}>
+          className={'flex-1 px-3 py-1.5 rounded-md font-black transition-all ' + (view === v.key ? 'bg-line text-fg shadow' : 'text-fg-faint hover:text-fg')}>
           {v.label}
         </button>
       ))}
@@ -98,7 +98,7 @@ export function OverviewPanel({ stock, details, status, ai, onNavigate }) {
         sub={margin ? `${lots(margin.series[margin.series.length - 1].margin)}` : null} />
       <Metric label={`營收 YoY${revenueTrend ? `（${revenueTrend.latest.period}）` : ''}`} onClick={() => onNavigate('fundamentals')}
         value={yoy != null ? `${signed(yoy)}%` : pending}
-        valueClass={yoy != null ? getTrendColors(yoy).text : 'text-white'}
+        valueClass={yoy != null ? getTrendColors(yoy).text : 'text-fg'}
         sub={revenueTrend?.latest.mom != null ? `MoM ${signed(revenueTrend.latest.mom)}%` : null} />
       <Metric label={`EPS${stock.epsPeriod ? `（${stock.epsPeriod}）` : ''}`} onClick={() => onNavigate('fundamentals')}
         value={stock.eps != null ? `${stock.eps} 元` : '—'} />
@@ -204,7 +204,7 @@ function ValuationRow({ label, stat, unit, emptyText }) {
     <div>
       <div className="flex justify-between items-baseline">
         <span className="text-2xs text-fg-muted font-bold">{label}</span>
-        <span className="text-sm font-mono font-black text-white">{stat ? `${stat.current}${unit}` : '—'}</span>
+        <span className="text-sm font-mono font-black text-fg">{stat ? `${stat.current}${unit}` : '—'}</span>
       </div>
       {stat?.percentile != null ? (
         <>
@@ -251,9 +251,9 @@ export function FundamentalsPanel({ stock, details, status }) {
           <Metric label="EPS" value={stock.eps != null ? `${stock.eps} 元` : '—'} sub={stock.epsPeriod} />
           <Metric label="ROE" value={stock.roe != null ? `${stock.roe}%` : '—'} sub={stock.roe != null ? '近四季' : null} />
           <Metric label="營收 YoY" value={stock.yoy != null ? `${signed(stock.yoy)}%` : '—'}
-            valueClass={stock.yoy != null ? getTrendColors(stock.yoy).text : 'text-white'} sub={stock.yoyPeriod} />
+            valueClass={stock.yoy != null ? getTrendColors(stock.yoy).text : 'text-fg'} sub={stock.yoyPeriod} />
           <Metric label="營收 MoM" value={revenueTrend?.latest.mom != null ? `${signed(revenueTrend.latest.mom)}%` : status === 'loading' && !details ? '...' : '—'}
-            valueClass={revenueTrend?.latest.mom != null ? getTrendColors(revenueTrend.latest.mom).text : 'text-white'} sub={revenueTrend?.latest.period} />
+            valueClass={revenueTrend?.latest.mom != null ? getTrendColors(revenueTrend.latest.mom).text : 'text-fg'} sub={revenueTrend?.latest.period} />
         </div>
       </Card>
 
@@ -309,7 +309,7 @@ export function FundamentalsPanel({ stock, details, status }) {
                   sub={`營業 ${q.ocf}・資本支出 ${q.capex}`} />
               ))}
               <Metric label="近四季合計" value={d.fcfTTM != null ? signed(d.fcfTTM) : '—'}
-                valueClass={d.fcfTTM != null ? getTrendColors(d.fcfTTM).text : 'text-white'} />
+                valueClass={d.fcfTTM != null ? getTrendColors(d.fcfTTM).text : 'text-fg'} />
             </div>
           )}
         </Section>
@@ -354,8 +354,8 @@ export function DividendsPanel({ details, status }) {
                     {d.events.map(e => (
                       <tr key={e.exDate} className="border-b border-surface-raised hover:bg-surface-raised">
                         <td className="py-2 px-3 font-mono whitespace-nowrap text-fg-muted">{e.exDate}</td>
-                        <td className="py-2 px-3 font-mono text-white">{e.cash ? `${e.cash} 元` : '—'}</td>
-                        <td className="py-2 px-3 font-mono text-white">{e.stock ? `${e.stock} 元` : '—'}</td>
+                        <td className="py-2 px-3 font-mono text-fg">{e.cash ? `${e.cash} 元` : '—'}</td>
+                        <td className="py-2 px-3 font-mono text-fg">{e.stock ? `${e.stock} 元` : '—'}</td>
                         <td className="py-2 px-3 font-mono text-fg-muted">{e.beforePrice ?? '—'}</td>
                         <td className={'py-2 px-3 font-bold whitespace-nowrap ' + (e.filled ? 'text-up' : 'text-fg-muted')}>
                           {e.beforePrice == null ? '—' : e.filled ? `已填息（第 ${e.fillDays} 天）` : '尚未填息'}

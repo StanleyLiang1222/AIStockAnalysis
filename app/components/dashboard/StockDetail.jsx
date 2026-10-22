@@ -7,7 +7,7 @@ import { CandlestickChart } from '@/app/components/charts/CandlestickChart';
 import { DailyCandlePanel } from '@/app/components/charts/DailyCandlePanel';
 import { ViewTabs, OverviewPanel, ChipsPanel, FundamentalsPanel, DividendsPanel } from './DetailPanels';
 import { AiReportPanel } from './AiReport';
-import { formatPrice, getTrendColors } from '@/lib/format';
+import { formatChange, formatPrice, getTrendColors } from '@/lib/format';
 
 // 走勢圖各區間取最近幾根日 K（1D 不畫走勢，另外顯示當日單根 K 棒）
 const RANGE_DAYS = { '5D': 5, '1M': 22, '3M': 66, '1Y': 250 };
@@ -44,8 +44,8 @@ export function StockDetail({
       {/* 價格橫幅 */}
       <div className={CARD + ' p-4 flex justify-between items-center gap-3 shadow-lg flex-shrink-0'}>
         <div className="min-w-0">
-          <span className="text-xs bg-surface-selected text-white px-2.5 py-0.5 rounded border border-line-strong font-mono font-bold">{stock.id}</span>
-          <h2 className="text-lg font-black text-white mt-1 flex flex-wrap items-center gap-x-2">
+          <span className="text-xs bg-surface-selected text-fg px-2.5 py-0.5 rounded border border-line-strong font-mono font-bold">{stock.id}</span>
+          <h2 className="text-lg font-black text-fg mt-1 flex flex-wrap items-center gap-x-2">
             {stock.name}
             <span className="text-xs font-bold text-fg-muted flex items-center gap-1.5">
               {refreshing ? (
@@ -58,9 +58,9 @@ export function StockDetail({
           </h2>
         </div>
         <div className="text-right flex-shrink-0">
-          <div className="text-xl font-mono font-black text-white">{formatPrice(stock.price)}</div>
+          <div className="text-xl font-mono font-black text-fg">{formatPrice(stock.price)}</div>
           <span className={'text-xs font-black ' + trend.text}>
-            {stock.change >= 0 ? '+' : ''}{formatPrice(stock.change)} ({stock.changePercent}%)
+            {formatChange(stock.change, stock.changePercent)}
           </span>
           <div className="text-2xs text-fg-muted font-bold font-mono mt-0.5 flex items-center justify-end gap-1.5">
             {stock.liveTime ? (
@@ -73,31 +73,32 @@ export function StockDetail({
       {/* 走勢圖（折線 / K線 可切換；1D 顯示當日單根 K 棒） */}
       <div className={CARD + ' p-4 shadow-md flex-shrink-0 flex flex-col'}>
         <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-          <span className="text-sm font-black text-white flex items-center gap-1.5">
+          <span className="text-sm font-black text-fg flex items-center gap-1.5">
             <Icon name="activity" className="w-5 h-5 text-accent" />
             {timeRange === '1D' ? '當日行情' : chartType === 'line' ? '走勢圖' : 'K線走勢圖'}
             {timeRange !== '1D' && (
               <span className="hidden sm:inline text-xs text-fg-muted font-normal ml-1">(含格線・Tooltip{chartType === 'candle' ? '・成交量' : ''})</span>
             )}
           </span>
-          <div className="flex items-center gap-2">
-            <div className={'flex bg-inset p-1 rounded-lg border-2 border-line-strong text-xs' + (timeRange === '1D' ? ' invisible' : '')}>
+          {/* 窄螢幕放不下時整組換到下一行，按鈕文字不換行 */}
+          <div className="flex flex-wrap justify-end items-center gap-2">
+            <div className={'flex flex-shrink-0 bg-inset p-1 rounded-lg border-2 border-line-strong text-xs' + (timeRange === '1D' ? ' invisible' : '')}>
               <button
                 onClick={() => onChartTypeChange('line')}
-                className={'px-3 py-1 rounded-md font-black transition-all flex items-center gap-1 ' + (chartType === 'line' ? 'bg-line text-accent border border-accent/30 shadow' : 'text-fg-faint hover:text-white')}
+                className={'px-2.5 sm:px-3 py-1 rounded-md font-black transition-all flex items-center gap-1 whitespace-nowrap ' + (chartType === 'line' ? 'bg-line text-accent border border-accent/30 shadow' : 'text-fg-faint hover:text-fg')}
               >
                 折線
               </button>
               <button
                 onClick={() => onChartTypeChange('candle')}
-                className={'px-3 py-1 rounded-md font-black transition-all flex items-center gap-1 ' + (chartType === 'candle' ? 'bg-line text-warn border border-warn/30 shadow' : 'text-fg-faint hover:text-white')}
+                className={'px-2.5 sm:px-3 py-1 rounded-md font-black transition-all flex items-center gap-1 whitespace-nowrap ' + (chartType === 'candle' ? 'bg-line text-warn border border-warn/30 shadow' : 'text-fg-faint hover:text-fg')}
               >
                 K線
               </button>
             </div>
-            <div className="flex bg-surface-raised p-1 rounded-lg border-2 border-line-strong text-xs">
+            <div className="flex flex-shrink-0 bg-surface-raised p-1 rounded-lg border-2 border-line-strong text-xs">
               {RANGES.map(r => (
-                <button key={r} onClick={() => onTimeRangeChange(r)} className={'px-2.5 sm:px-3 py-1 rounded-md font-black transition-all ' + (timeRange === r ? 'bg-line text-white shadow' : 'text-fg-faint')}>{r}</button>
+                <button key={r} onClick={() => onTimeRangeChange(r)} className={'px-2.5 sm:px-3 py-1 rounded-md font-black transition-all ' + (timeRange === r ? 'bg-line text-fg shadow' : 'text-fg-faint')}>{r}</button>
               ))}
             </div>
           </div>

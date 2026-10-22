@@ -119,7 +119,7 @@ export function Dashboard({ user }) {
       <>
         <StatusCard title="自選清單是空的" message="新增第一檔台股開始追蹤。" actionLabel="新增標的" onAction={() => setShowAddModal(true)}>
           <div>
-            <button onClick={() => signOut()} className="text-xs text-fg-faint hover:text-white font-black">登出</button>
+            <button onClick={() => signOut()} className="text-xs text-fg-faint hover:text-fg font-black">登出</button>
           </div>
         </StatusCard>
         {addModal}
@@ -162,7 +162,7 @@ export function Dashboard({ user }) {
 
       {/* 電腦版最下方的 K 線說明連結 */}
       <footer className="hidden lg:flex bg-surface border-t-2 border-line-subtle py-4 px-6 text-xs text-fg-faint flex-shrink-0 items-center justify-center gap-1">
-        <span className="font-black text-white mr-2">K 線是什麼？</span>
+        <span className="font-black text-fg mr-2">K 線是什麼？</span>
         <Link href="/guide" className="text-accent hover:text-accent-soft font-black transition-all underline">點此查看 K線型態圖典</Link>
       </footer>
 

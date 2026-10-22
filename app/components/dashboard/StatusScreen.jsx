@@ -11,7 +11,7 @@ export function LoadingScreen() {
   );
 }
 
-export function StatusCard({ title, titleClassName = 'text-white', message, actionLabel, onAction, children }) {
+export function StatusCard({ title, titleClassName = 'text-fg', message, actionLabel, onAction, children }) {
   return (
     <div className="w-full min-h-screen flex items-center justify-center bg-canvas px-4">
       <div className="bg-surface border-2 border-line rounded-2xl p-8 w-full max-w-sm text-center space-y-3">

@@ -2,33 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 色彩一律使用 lib/theme.js 產生的 CSS 變數（--color-*），深色、淺色模式自動切換 */
+
 /* Styling elegant custom scrollbars inspired by Radix design tokens */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: theme('colors.canvas');
+  background: rgb(var(--color-canvas));
 }
 ::-webkit-scrollbar-thumb {
-  background: theme('colors.line.DEFAULT');
+  background: rgb(var(--color-line));
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: theme('colors.accent.DEFAULT');
+  background: rgb(var(--color-accent));
 }
 /* Glassmorphism details cards and interactive glow for K-line guide */
 .glass-k-card {
-  background: theme('colors.surface.DEFAULT / 65%');
+  background: rgb(var(--color-surface) / 65%);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 2px solid theme('colors.line.strong / 40%');
+  border: 2px solid rgb(var(--color-line-strong) / 40%);
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 .glass-k-card:hover {
   transform: translateY(-4px);
-  border-color: theme('colors.accent.DEFAULT / 50%');
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px theme('colors.accent.DEFAULT / 15%');
+  border-color: rgb(var(--color-accent) / 50%);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgb(var(--color-accent) / 15%);
 }
 
 /* Subtext indicators inside SVG */

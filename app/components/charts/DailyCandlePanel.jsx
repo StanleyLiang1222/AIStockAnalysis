@@ -41,7 +41,7 @@ export function DailyCandlePanel({ candle, prevClose }) {
         </div>
         <div>
           <div className="text-2xs text-fg-muted font-bold">成交量（張）</div>
-          <div className="text-sm font-mono font-black text-white">{volume.toLocaleString('en-US')}</div>
+          <div className="text-sm font-mono font-black text-fg">{volume.toLocaleString('en-US')}</div>
         </div>
       </div>
     </div>
