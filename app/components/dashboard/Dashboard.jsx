@@ -30,7 +30,7 @@ export function Dashboard({ user }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { stocks: closedStocks, candlesById, loading, error, busy, load, refresh, add, remove } = useWatchlist();
+  const { stocks: closedStocks, candlesById, loading, error, busy, load, refresh, add, remove, reorder } = useWatchlist();
   // 盤中用證交所即時行情蓋上今天的股價（AI 報告在伺服器端只用 FinMind 盤後資料，不受影響）
   const realtime = useRealtime(closedStocks.filter(s => !s.unavailable).map(s => s.id));
   const stocks = useMemo(
@@ -140,6 +140,7 @@ export function Dashboard({ user }) {
           refreshing={busy}
           onSelect={handleSelect}
           onRemove={remove}
+          onReorder={reorder}
           onAdd={() => setShowAddModal(true)}
         />
         <section className={(tab === 'watchlist' ? 'hidden lg:block ' : '') + 'lg:min-h-0 lg:overflow-y-auto lg:pr-0.5'}>

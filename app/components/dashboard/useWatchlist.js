@@ -6,7 +6,7 @@ import { callWatchlistApi, fetchStocks, toListItem } from './api';
 
 /**
  * 自選清單的資料與操作。
- * stocks 依清單順序排列（新加入的在最前面），抓不到資料的股票以 { id, unavailable: true } 佔位。
+ * stocks 依使用者自訂順序排列（新加入的在最前面，可拖曳調整），抓不到資料的股票以 { id, unavailable: true } 佔位。
  * 選取哪一檔由呼叫端（網址）決定，這裡不處理。
  */
 export function useWatchlist() {
@@ -167,5 +167,25 @@ export function useWatchlist() {
     }
   }, [stocks]);
 
-  return { stocks, candlesById, loading, error, busy, load, refresh, add, remove };
+  // 拖曳排序：先更新畫面，API 失敗再還原成原本的順序
+  const reorder = useCallback(async (fromId, toId) => {
+    const from = stocks.findIndex(s => s.id === fromId);
+    const to = stocks.findIndex(s => s.id === toId);
+    if (from === -1 || to === -1 || from === to) return;
+    const previous = stocks;
+    const next = [...stocks];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    setStocks(next);
+
+    try {
+      await callWatchlistApi('PUT', next.map(s => s.id));
+    } catch (err) {
+      if (err.status === 401) return;
+      console.error('儲存排序失敗', err);
+      setStocks(prev => (prev === next ? previous : prev));
+      alert('排序儲存失敗，請確認 Supabase 是否有啟動後再試一次。');
+    }
+  }, [stocks]);
+
+  return { stocks, candlesById, loading, error, busy, load, refresh, add, remove, reorder };
 }

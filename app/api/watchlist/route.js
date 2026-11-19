@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getOrSeedWatchlist, addToWatchlist, removeFromWatchlist, getWatchlist } from '@/lib/db';
+import { getOrSeedWatchlist, addToWatchlist, removeFromWatchlist, getWatchlist, reorderWatchlist } from '@/lib/db';
 import { parseStockId } from '@/lib/stock-id';
 
 // 新使用者第一次載入時種入的預設自選股
 const DEFAULT_WATCHLIST_IDS = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2881.TW'];
+const MAX_ORDER_LENGTH = 200;
 
 async function withUser(handler) {
   const session = await auth();
@@ -35,6 +36,21 @@ export async function POST(request) {
       return NextResponse.json({ error: 'invalid_stock_id' }, { status: 400 });
     }
     await addToWatchlist(email, stockId);
+    return NextResponse.json({ watchlist: await getWatchlist(email) });
+  });
+}
+
+// 重新排序：body { order: ['2330.TW', ...] }
+export async function PUT(request) {
+  const body = await request.json().catch(() => null);
+  const order = Array.isArray(body?.order) && body.order.length <= MAX_ORDER_LENGTH
+    ? body.order.map(parseStockId)
+    : null;
+  return withUser(async (email) => {
+    if (!order || order.some((id) => !id)) {
+      return NextResponse.json({ error: 'invalid_order' }, { status: 400 });
+    }
+    await reorderWatchlist(email, order);
     return NextResponse.json({ watchlist: await getWatchlist(email) });
   });
 }

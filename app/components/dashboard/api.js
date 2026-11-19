@@ -21,12 +21,13 @@ export async function requestJson(url, init) {
   return res.json();
 }
 
+// POST 傳 stockId；PUT（重新排序）傳完整順序的代碼陣列
 export async function callWatchlistApi(method, stockId) {
   const init = { method };
   let url = '/api/watchlist';
-  if (method === 'POST') {
+  if (method === 'POST' || method === 'PUT') {
     init.headers = { 'Content-Type': 'application/json' };
-    init.body = JSON.stringify({ stockId });
+    init.body = JSON.stringify(method === 'POST' ? { stockId } : { order: stockId });
   } else if (method === 'DELETE') {
     url += `?stockId=${encodeURIComponent(stockId)}`;
   }

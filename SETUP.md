@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS watchlist (
   user_email TEXT NOT NULL REFERENCES allowed_users(email),
   stock_id TEXT NOT NULL,
   added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  position INTEGER, -- 使用者拖曳排序的順序，小的在前（新加入的股票取目前最小值 - 1，可為負數）
   UNIQUE (user_email, stock_id)
 );
 
@@ -74,6 +75,8 @@ ON CONFLICT (email) DO NOTHING;
 ```
 
 （這段內容跟 [lib/db.js](lib/db.js) 的 `ensureSchema()` 和 [lib/seed.sql](lib/seed.sql) 是同一份。）
+
+`watchlist.position` 是後來加的欄位（自選清單拖曳排序）。既有資料庫不用手動處理：`ensureSchema()` 會用 `ADD COLUMN IF NOT EXISTS` 補上欄位，並依原本「新加入的在前」的順序替 `position` 為空的列補值。排序由前端呼叫 `PUT /api/watchlist`（body `{ order: [...] }`）整批寫回。
 
 之後要新增白名單成員，一樣去 SQL Editor 貼一行執行，不需要重新部署：
 

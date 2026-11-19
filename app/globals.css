@@ -4,6 +4,11 @@
 
 /* 色彩一律使用 lib/theme.js 產生的 CSS 變數（--color-*），深色、淺色模式自動切換 */
 
+/* 長按拖曳的列：iOS 長按時不要跳出系統選單（複製、查詢） */
+.no-touch-callout {
+  -webkit-touch-callout: none;
+}
+
 /* Styling elegant custom scrollbars inspired by Radix design tokens */
 ::-webkit-scrollbar {
   width: 6px;

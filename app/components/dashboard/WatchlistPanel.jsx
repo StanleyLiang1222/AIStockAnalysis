@@ -1,13 +1,43 @@
 'use client';
 
+import { useRef } from 'react';
+import {
+  DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Icon } from '@/app/components/ui/Icon';
 import { formatChange, formatPrice, getTrendColors } from '@/lib/format';
+
+// 只能上下移動
+const lockHorizontal = ({ transform }) => ({ ...transform, x: 0 });
 
 /**
  * 自選清單（電腦版左欄、手機版「自選」分頁共用）。
  * 抓不到資料的股票以佔位列顯示，不能點選但可以刪除。
+ * 拖曳排序：滑鼠按住移動 5px 以上開始拖曳（只是點一下仍是選取）；
+ * 觸控長按 250ms 後開始拖曳（長按前手指移動就當作捲動頁面）；鍵盤可用空白鍵＋方向鍵。
  */
-export function WatchlistPanel({ stocks, selectedId, refreshing, onSelect, onRemove, onAdd, className = '' }) {
+export function WatchlistPanel({ stocks, selectedId, refreshing, onSelect, onRemove, onReorder, onAdd, className = '' }) {
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  // 拖曳結束放開滑鼠時會觸發該列的 click，用這個旗標擋掉，避免拖完就切換到那一檔
+  const justDragged = useRef(false);
+
+  const handleDragEnd = ({ active, over }) => {
+    justDragged.current = true;
+    setTimeout(() => { justDragged.current = false; }, 0);
+    if (over && active.id !== over.id) onReorder(active.id, over.id);
+  };
+  const handleSelect = (id) => {
+    if (!justDragged.current) onSelect(id);
+  };
+
   return (
     <div className={'bg-surface border-2 border-line rounded-xl p-4 flex flex-col lg:min-h-0 lg:overflow-hidden ' + className}>
       <div className="flex justify-between items-center mb-3">
@@ -20,11 +50,42 @@ export function WatchlistPanel({ stocks, selectedId, refreshing, onSelect, onRem
         </button>
       </div>
       <div className="flex-1 lg:overflow-y-auto space-y-2 pr-0.5">
-        {stocks.map(stock => (stock.unavailable
-          ? <PlaceholderRow key={stock.id} stock={stock} onRemove={onRemove} />
-          : <StockRow key={stock.id} stock={stock} isSelected={stock.id === selectedId} onSelect={onSelect} onRemove={onRemove} />
-        ))}
+        <DndContext
+          id="watchlist-dnd"
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[lockHorizontal]}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragEnd}
+        >
+          <SortableContext items={stocks.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            {stocks.map(stock => (
+              <SortableRow key={stock.id} id={stock.id}>
+                {stock.unavailable
+                  ? <PlaceholderRow stock={stock} onRemove={onRemove} />
+                  : <StockRow stock={stock} isSelected={stock.id === selectedId} onSelect={handleSelect} onRemove={onRemove} />}
+              </SortableRow>
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
+    </div>
+  );
+}
+
+// 可拖曳的外框：整列都是拖曳區域，拖曳中浮起並加陰影
+function SortableRow({ id, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={'relative select-none no-touch-callout rounded-lg ' + (isDragging ? 'z-10 shadow-2xl shadow-accent/20 cursor-grabbing' : '')}
+      {...attributes}
+      {...listeners}
+      aria-roledescription="可拖曳排序的自選股"
+    >
+      {children}
     </div>
   );
 }
