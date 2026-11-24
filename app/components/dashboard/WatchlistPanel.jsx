@@ -9,7 +9,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Icon } from '@/app/components/ui/Icon';
-import { formatChange, formatPrice, getTrendColors } from '@/lib/format';
+import { formatChange, formatPrice, getPriceLimit, getTrendColors } from '@/lib/format';
 
 // 只能上下移動
 const lockHorizontal = ({ transform }) => ({ ...transform, x: 0 });
@@ -100,6 +100,9 @@ function RemoveButton({ onClick }) {
 
 function StockRow({ stock, isSelected, onSelect, onRemove }) {
   const trend = getTrendColors(stock.change);
+  const limit = getPriceLimit(stock);
+  // 漲停紅底、跌停綠底；所有列都留同樣內距，價格才會上下對齊
+  const limitBg = limit === 'up' ? 'bg-up/20' : limit === 'down' ? 'bg-down/20' : '';
   return (
     <div
       onClick={() => onSelect(stock.id)}
@@ -115,7 +118,7 @@ function StockRow({ stock, isSelected, onSelect, onRemove }) {
         </div>
       </div>
       <div className="text-right flex items-center gap-3 flex-shrink-0">
-        <div>
+        <div className={'px-2 py-0.5 rounded-md ' + limitBg} title={limit === 'up' ? '漲停' : limit === 'down' ? '跌停' : undefined}>
           <div className="text-sm font-mono font-extrabold text-fg">{formatPrice(stock.price)}</div>
           <div className={'text-xs font-mono font-black ' + trend.text}>{formatChange(stock.change, stock.changePercent)}</div>
         </div>
