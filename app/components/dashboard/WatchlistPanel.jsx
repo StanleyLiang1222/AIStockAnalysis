@@ -101,13 +101,16 @@ function RemoveButton({ onClick }) {
 function StockRow({ stock, isSelected, onSelect, onRemove }) {
   const trend = getTrendColors(stock.change);
   const limit = getPriceLimit(stock);
-  // 漲停紅底、跌停綠底；所有列都留同樣內距，價格才會上下對齊
-  const limitBg = limit === 'up' ? 'bg-up/20' : limit === 'down' ? 'bg-down/20' : '';
+  // 漲停整列紅底、跌停整列綠底（選取中仍保留藍色外框）
+  const limitBg = limit === 'up' ? 'bg-up/20' : limit === 'down' ? 'bg-down/20' : null;
   return (
     <div
       onClick={() => onSelect(stock.id)}
+      title={limit === 'up' ? '漲停' : limit === 'down' ? '跌停' : undefined}
       className={'p-3 rounded-lg border-2 transition-all cursor-pointer flex justify-between items-center gap-2 '
-        + (isSelected ? 'bg-surface-selected border-accent shadow-lg shadow-accent/15 scale-99' : 'bg-surface-raised border-line-subtle hover:border-line-strong')}
+        + (isSelected
+          ? (limitBg ?? 'bg-surface-selected') + ' border-accent shadow-lg shadow-accent/15 scale-99'
+          : (limitBg ?? 'bg-surface-raised') + ' border-line-subtle hover:border-line-strong')}
     >
       <div className="min-w-0">
         {/* 名稱獨佔第一行，代碼與產業放第二行；過長時截斷，右側價格不被擠壓 */}
@@ -118,7 +121,7 @@ function StockRow({ stock, isSelected, onSelect, onRemove }) {
         </div>
       </div>
       <div className="text-right flex items-center gap-3 flex-shrink-0">
-        <div className={'px-2 py-0.5 rounded-md ' + limitBg} title={limit === 'up' ? '漲停' : limit === 'down' ? '跌停' : undefined}>
+        <div>
           <div className="text-sm font-mono font-extrabold text-fg">{formatPrice(stock.price)}</div>
           <div className={'text-xs font-mono font-black ' + trend.text}>{formatChange(stock.change, stock.changePercent)}</div>
         </div>
